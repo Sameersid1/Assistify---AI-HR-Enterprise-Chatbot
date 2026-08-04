@@ -4,7 +4,8 @@
 
 **Checkpoint date:** 2026-08-02
 **Project:** Assistify – AI-Powered HR Assistant with Enterprise Knowledge Search
-**Stage:** Architecture & scope locked (pending owner sign-off). **Zero code written. No repo initialised.**
+**Stage:** Architecture & scope locked (pending owner sign-off). **Zero application code written.** Git repo initialised and pushed — documentation only.
+**Repo:** https://github.com/Sameersid1/Assistify---AI-HR-Enterprise-Chatbot
 
 ---
 
@@ -82,6 +83,11 @@ If it can't help, it offers to raise a ticket to HR or IT, attaches the chat tra
 | D17 | Policy comparison | **Documented future enhancement, not built** | It's not a RAG problem — it needs both documents in context at once plus structured diff output. Different pipeline, different evaluation |
 | D18 | Write actions | Always require an explicit confirmation turn | An assistant that silently files tickets is a spam generator |
 | D19 | Prompt injection defence | Capability restriction, not prompt wording | Uploaded docs are untrusted *data*. Even a fully compromised model has no tool that could leak another employee's record |
+| D20 | **Public sign-up** | ⛔ **None. For any role.** Landing page has a Login button and nothing else | Employment is a fact asserted by HR, not a claim made by a visitor. An open signup on a multi-tenant HR app lets a stranger join any company. Email-domain checks don't fix it. See `AUTH-AND-ONBOARDING-FLOW.md` |
+| D21 | Account creation | **Invitation → activation.** HR/admin creates the record; the user sets their own password via a single-use token (72h, stored hashed) | Mirrors Workday/BambooHR/Zoho. Tenant isolation begins at account creation instead of being retrofitted |
+| D22 | Creation chain | `super_admin` → company + first `admin` → `hr`/`it_support` → `employee`. **HR cannot create HR** | Contains privilege escalation: a compromised HR account cannot mint more HR accounts. Whitelist of allowed target roles, enforced in the service layer |
+| D23 | `super_admin` role | **SHOULD-HAVE, two screens only** (company list + create company & first admin). Seeded, never self-created. Demo must not depend on it | Without it, "how is a company onboarded?" answers to "we run a script" — weak. But it's a 5th role, so it stays tiny and cuttable |
+| D24 | Offboarding | **Deactivate, never delete.** Status flips, refresh tokens die, all data retained | User IDs are referenced by leave, tickets, chat and audit rows. Deleting breaks the audit trail — one of the five differentiators |
 
 ---
 
