@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 4.8% 95.9%; /* zinc-50: #F4F4F5 / #FAFAFA */
+    --foreground: 240 10% 3.9%; /* zinc-900 */
+
+    --card: 0 0% 100%; /* white */
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 243.4 75.4% 58.6%; /* indigo-600: #4F46E5 */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 244.5 57.9% 50.6%; /* indigo-700: #4338CA */
+
+    --secondary: 240 4.8% 95.9%; /* zinc-100 */
+    --secondary-foreground: 240 5.9% 10%;
+
+    --muted: 240 4.8% 95.9%; /* zinc-100 */
+    --muted-foreground: 240 3.8% 46.1%; /* zinc-500 */
+
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+
+    --destructive: 346.8 77.2% 49.8%; /* rose-600 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 5.9% 90%; /* zinc-200 */
+    --input: 240 5.9% 90%;
+    --ring: 243.4 75.4% 58.6%; /* indigo-600 */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%; /* zinc-950 */
+    --foreground: 0 0% 98%; /* zinc-50 */
+
+    --card: 240 5.9% 10%; /* zinc-900 */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 5.9% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 243.4 75.4% 58.6%; /* indigo-600 */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 244.5 57.9% 50.6%;
+
+    --secondary: 240 3.7% 15.9%; /* zinc-800 */
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%; /* zinc-400 */
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 346.8 77.2% 49.8%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 3.7% 15.9%; /* zinc-800 */
+    --input: 240 3.7% 15.9%;
+    --ring: 243.4 75.4% 58.6%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+  }
+}
+
+/* Linear/Vercel dense style utilities */
+.tabular-numbers {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle dot-grid pattern for login right panel */
+.bg-dot-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Custom scrollbar for dense clean UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.5);
+}
