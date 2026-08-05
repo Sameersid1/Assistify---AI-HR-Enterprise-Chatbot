@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   Sparkles,
   Loader2,
@@ -15,7 +15,11 @@ import {
   EyeOff,
   Quote,
   Lock,
+  User,
+  Users,
+  Shield,
   ArrowRight,
+  CheckCircle2,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
@@ -24,25 +28,47 @@ import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 const loginSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Invalid email address"),
+  email: z.string().min(1, "Email is required").email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-interface DemoPersona {
-  name: string
-  email: string
-  role: string
-  initials: string
+type RoleType = "employee" | "hr" | "admin"
+
+interface RolePortal {
+  id: RoleType
+  label: string
+  icon: typeof User
+  subtext: string
+  defaultEmail: string
 }
 
-/** Must match server/src/scripts/seed.ts — only these accounts actually exist. */
+/** Seeded accounts — must match server/src/scripts/seed.ts. */
 const DEMO_PASSWORD = "Password123!"
 
-const DEMO_PERSONAS: DemoPersona[] = [
-  { name: "Priya Sharma", email: "hr@nexora.com", role: "HR", initials: "PS" },
-  { name: "Arjun Mehta", email: "employee@nexora.com", role: "Employee", initials: "AM" },
+const ROLE_PORTALS: RolePortal[] = [
+  {
+    id: "employee",
+    label: "Employee",
+    icon: User,
+    subtext: "Self-service queries, leave balances & requests",
+    defaultEmail: "employee@nexora.com",
+  },
+  {
+    id: "hr",
+    label: "HR Manager",
+    icon: Users,
+    subtext: "Leave approvals, tickets & workforce analytics",
+    defaultEmail: "hr@nexora.com",
+  },
+  {
+    id: "admin",
+    label: "Administrator",
+    icon: Shield,
+    subtext: "System configurations, RBAC & user directory",
+    defaultEmail: "admin@nexora.com",
+  },
 ]
 
 export const LoginPage: React.FC = () => {
@@ -52,7 +78,7 @@ export const LoginPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [activePersonaEmail, setActivePersonaEmail] = useState<string | null>(null)
+  const [selectedRole, setSelectedRole] = useState<RoleType>("employee")
 
   const {
     register,
@@ -62,10 +88,22 @@ export const LoginPage: React.FC = () => {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
-      password: "",
+      // Never ship prefilled credentials — DEV only.
+      email: import.meta.env.DEV ? "employee@nexora.com" : "",
+      password: import.meta.env.DEV ? DEMO_PASSWORD : "",
     },
   })
+
+  const handleRoleSelect = (portal: RolePortal) => {
+    setSelectedRole(portal.id)
+    setErrorMessage(null)
+    // Autofill is a local convenience only. In a production build the portal
+    // tabs just describe the role — they never reveal a valid address.
+    if (import.meta.env.DEV) {
+      setValue("email", portal.defaultEmail)
+      setValue("password", DEMO_PASSWORD)
+    }
+  }
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true)
@@ -84,12 +122,7 @@ export const LoginPage: React.FC = () => {
     }
   }
 
-  const selectPersona = (p: DemoPersona) => {
-    setActivePersonaEmail(p.email)
-    setValue("email", p.email)
-    setValue("password", DEMO_PASSWORD)
-    setErrorMessage(null)
-  }
+  const activePortal = ROLE_PORTALS.find((p) => p.id === selectedRole) || ROLE_PORTALS[0]
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100 flex selection:bg-indigo-600 selection:text-white">
@@ -140,48 +173,49 @@ export const LoginPage: React.FC = () => {
               Welcome back
             </h1>
             <p className="text-xs text-zinc-500 mt-1">
-              Sign in to your Assistify workspace
+              Select your role portal to sign in to your workspace
             </p>
           </div>
 
-          {/* Dev-only quick sign-in.
-              Publishing real account names and emails on a public login page is
-              user enumeration — it hands an attacker half of every credential.
-              It also contradicts the rest of this page, which deliberately
-              returns a generic error and has no company picker for the same
-              reason. `import.meta.env.DEV` is false in `npm run build`, so Vite
-              strips this whole block from the production bundle. */}
-          {import.meta.env.DEV && (
-          <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
-            {DEMO_PERSONAS.map((p) => {
-              const isSelected = activePersonaEmail === p.email
-              return (
-                <button
-                  key={p.email}
-                  type="button"
-                  onClick={() => selectPersona(p)}
-                  className={`flex items-center gap-2 rounded-lg p-2 text-left transition-all ${
-                    isSelected
-                      ? "bg-indigo-50 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-200 ring-1 ring-indigo-600 font-semibold"
-                      : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-200 dark:bg-zinc-700 text-[10px] font-bold">
-                    {p.initials}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] truncate leading-tight">{p.name}</p>
-                    <p className="text-[9px] text-zinc-400 truncate">{p.role}</p>
-                  </div>
-                </button>
-              )
-            })}
+          {/* 3 Role Selection Tabs (NO personal names, pure role classification) */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
+              {ROLE_PORTALS.map((portal) => {
+                const Icon = portal.icon
+                const isSelected = selectedRole === portal.id
+                return (
+                  <button
+                    key={portal.id}
+                    type="button"
+                    onClick={() => handleRoleSelect(portal)}
+                    className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-medium transition-all ${
+                      isSelected
+                        ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-2xs font-semibold"
+                        : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="text-[11px] leading-tight">{portal.label}</span>
+                    {isSelected && (
+                      <motion.div
+                        layoutId="activeRoleIndicator"
+                        className="absolute inset-0 border border-indigo-600/40 dark:border-indigo-500/40 rounded-lg pointer-events-none"
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            <p className="text-[11px] text-center text-zinc-400">
+              {activePortal.subtext}
+            </p>
           </div>
-          )}
 
           {/* Error Alert */}
           {errorMessage && (
-            <Alert variant="destructive" className="py-2 animate-in fade-in-50">
+            <Alert variant="destructive" className="py-2.5 animate-in fade-in-50">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">{errorMessage}</AlertDescription>
             </Alert>
@@ -196,6 +230,7 @@ export const LoginPage: React.FC = () => {
               <Input
                 type="email"
                 placeholder=""
+                autoComplete="email"
                 disabled={isLoading}
                 {...register("email")}
                 className="h-9 text-xs"
@@ -212,10 +247,10 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <button
                   type="button"
-                  onClick={() => alert(`Demo password for testing is: ${DEMO_PASSWORD}`)}
+                  onClick={() => alert("Please contact your IT/HR administrator for password reset.")}
                   className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline"
                 >
-                  Forgot?
+                  Forgot password?
                 </button>
               </div>
 
@@ -223,6 +258,7 @@ export const LoginPage: React.FC = () => {
                 <Input
                   type={showPassword ? "text" : "password"}
                   placeholder=""
+                  autoComplete="current-password"
                   disabled={isLoading}
                   {...register("password")}
                   className="h-9 pr-9 text-xs"
@@ -250,23 +286,26 @@ export const LoginPage: React.FC = () => {
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                    <span>Signing in...</span>
+                    <span>Verifying credentials...</span>
                   </>
                 ) : (
-                  <span>Sign In</span>
+                  <span>Sign In as {activePortal.label}</span>
                 )}
               </Button>
             </motion.div>
           </form>
 
-          <p className="text-center text-[11px] text-zinc-400">
-            Invite-only enterprise access · Your HR team will send you an invitation
-          </p>
+          {/* Helper info */}
+          <div className="pt-2 text-center">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Don&apos;t have an account? Your HR team will send you an invitation.
+            </p>
+          </div>
         </motion.div>
 
         {/* Bottom copyright */}
         <div className="text-center text-[10px] text-zinc-400">
-          Nexora Technologies Inc. © 2026
+          Nexora Technologies Inc. © 2026 · Confidential & Proprietary
         </div>
       </div>
 

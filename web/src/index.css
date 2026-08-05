@@ -72,9 +72,16 @@
   * {
     @apply border-border;
   }
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    font-size: 0.9375rem; /* 15px base text */
+    line-height: 1.5;
   }
 }
 
@@ -89,7 +96,7 @@
   background-size: 24px 24px;
 }
 
-/* Custom scrollbar for dense clean UI */
+/* Custom scrollbar for clean UI */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -98,9 +105,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(161, 161, 170, 0.3);
-  border-radius: 3px;
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(161, 161, 170, 0.5);
+  background: rgba(156, 163, 175, 0.7);
 }

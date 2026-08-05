@@ -27,12 +27,12 @@ export const AppLayout: React.FC = () => {
       </Sheet>
 
       {/* Main Content Column */}
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+      <div className="flex flex-1 flex-col min-w-0">
         <TopBar onOpenMobileNav={() => setIsMobileNavOpen(true)} />
 
-        {/* Scrollable Content Area: max-w-[1280px] p-6 space-y-6 */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1280px] p-6 space-y-6">
+        {/* Generous Padding & Margin Container (Not Cut Off on Any Side) */}
+        <main className="flex-1 overflow-y-auto px-6 py-5 md:px-8 md:py-6 lg:px-10">
+          <div className="mx-auto w-full max-w-7xl">
             <Outlet />
           </div>
         </main>
