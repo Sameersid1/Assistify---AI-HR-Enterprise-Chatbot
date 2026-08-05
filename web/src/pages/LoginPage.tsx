@@ -144,8 +144,15 @@ export const LoginPage: React.FC = () => {
             </p>
           </div>
 
-          {/* 1-Click Persona Selector Pills */}
-          <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
+          {/* Dev-only quick sign-in.
+              Publishing real account names and emails on a public login page is
+              user enumeration — it hands an attacker half of every credential.
+              It also contradicts the rest of this page, which deliberately
+              returns a generic error and has no company picker for the same
+              reason. `import.meta.env.DEV` is false in `npm run build`, so Vite
+              strips this whole block from the production bundle. */}
+          {import.meta.env.DEV && (
+          <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
             {DEMO_PERSONAS.map((p) => {
               const isSelected = activePersonaEmail === p.email
               return (
@@ -170,6 +177,7 @@ export const LoginPage: React.FC = () => {
               )
             })}
           </div>
+          )}
 
           {/* Error Alert */}
           {errorMessage && (

@@ -204,7 +204,224 @@ Three states, all of which you should render as separate variants:
 
 ---
 
-# PROMPT 4 — Employee dashboard ⭐
+# ROLE-SPECIFIC DASHBOARDS (revision — use these instead of Prompts 4 and 6)
+
+> **Prompts 4 and 6 below are superseded by 4A–4D.** They produced dashboards
+> that differed only in their numbers. Use this section for Aug 7–9.
+
+## The principle that makes them different
+
+> **A dashboard answers the one question that role opens the app with.**
+
+| Role | Their question | So the page is | Dominant element |
+|---|---|---|---|
+| Employee | *"What's mine?"* | Personal state | Three big balance numbers |
+| HR | *"What needs me?"* | A work queue | An approvals table with buttons |
+| IT Support | *"What's in my queue?"* | One prioritised list | Full-width ticket queue, **no stat cards at all** |
+| Admin | *"Is the system healthy? Who has access?"* | Governance panels | User breakdown + audit log stream |
+
+Different *questions* produce different *layouts*. That's what stops them
+feeling like recolours of one page.
+
+## First — the routing change (do this before prompting)
+
+Right now `/app` renders `DashboardPage` for everyone. Replace it with a
+switch:
+
+```tsx
+// web/src/pages/DashboardRouter.tsx
+import { useAuth } from "@/context/AuthContext"
+import { EmployeeDashboard } from "./dashboards/EmployeeDashboard"
+import { HrDashboard } from "./dashboards/HrDashboard"
+import { ItDashboard } from "./dashboards/ItDashboard"
+import { AdminDashboard } from "./dashboards/AdminDashboard"
+
+export function DashboardRouter() {
+  const { user } = useAuth()
+  switch (user?.role) {
+    case "hr":         return <HrDashboard />
+    case "it_support": return <ItDashboard />
+    case "admin":
+    case "super_admin":return <AdminDashboard />
+    default:           return <EmployeeDashboard />
+  }
+}
+```
+
+Then in `App.tsx`: `<Route index element={<DashboardRouter />} />`.
+
+---
+
+## PROMPT 4A — Employee dashboard
+
+```
+Build the EMPLOYEE dashboard. It answers "what's mine?" — personal, calm,
+and dominated by three large numbers. This must feel airy and consumption-
+oriented, NOT like an admin console. No dense tables, no action queues.
+
+Header: "Good morning, Arjun" (text-2xl font-semibold) with today's date
+muted on the right.
+
+Section 1 — three large balance cards in a 3-column grid. Each card:
+- Small uppercase label (Casual Leave / Sick Leave / Earned Leave)
+- A circular progress ring, 72px, indigo stroke on a zinc-100 track, with the
+  remaining number centred inside it in text-3xl font-semibold tabular-nums
+- Below the ring: "of 12 total" muted, and "4 used this year"
+Use rings, not bars — this is the employee's signature visual.
+Data: Casual 8 of 12, Sick 5 of 8, Earned 14 of 18.
+
+Section 2 — two columns:
+  Left (2/3): "Recent requests" card. Compact table, five rows, columns
+  Type / Dates / Days / Status. Status as a Badge (Approved emerald, Pending
+  amber, Rejected rose). Card header has a primary "New request" button.
+  Include an empty-state variant.
+
+  Right (1/3): two stacked small cards —
+  "Upcoming holidays": three rows, date + name (Independence Day 15 Aug,
+  Ganesh Chaturthi 27 Aug, Gandhi Jayanti 2 Oct).
+  "Attendance": one large 94% tabular-nums with "22 of 23 days" muted.
+
+Section 3 — full-width assistant banner: indigo-50 background, message-circle
+icon, "Ask Assistify anything", subtext "Leave policy, holidays,
+reimbursements — get answers instantly", and an "Open chat" button.
+
+Generous vertical spacing (space-y-6). This page should feel like a personal
+summary, not a control panel.
+```
+
+## PROMPT 4B — HR dashboard ⭐
+
+```
+Build the HR dashboard. It answers "what needs me?" — this is a WORK QUEUE,
+not a summary. It must look visibly denser and more action-oriented than the
+employee dashboard. The dominant element is a table with buttons in it.
+
+Header: NOT a greeting. An action headline —
+"7 requests need your attention" (text-2xl font-semibold), with subtext
+"Nexora Technologies · 48 employees". On the right, a ghost button
+"View all requests".
+
+Section 1 — a THIN metric strip, not big cards. A single bordered row split
+into four segments by vertical dividers, each segment showing a small
+uppercase label above a tabular-nums value:
+  Pending approvals 7 (amber) · Open tickets 12 · On leave today 4 ·
+  New joiners this month 3
+Keep this strip under 80px tall. The employee dashboard uses big cards; HR
+deliberately does not, so the table below dominates.
+
+Section 2 — the centrepiece, full width: "Pending leave approvals" card with
+a table of six rows, 56px row height:
+  Employee (Avatar + name + department stacked)
+  Type (Badge, outline)
+  Dates ("12 Aug – 14 Aug 2026" with muted "3 days" below, tabular-nums)
+  Balance after ("5 of 12 left", amber if it would drop below 2)
+  Applied (relative, muted)
+  Actions — "Approve" (emerald outline) and "Reject" (rose ghost)
+Rows are expandable: clicking one reveals the employee's reason in a zinc-50
+inset panel plus an amber inline note when others in the same department are
+already off those dates.
+
+Section 3 — two columns:
+  Left (1/2): "Recent activity" vertical timeline, six items, each a small
+  coloured dot + one line + relative time.
+  Right (1/2): "Assistant activity" — three inline metrics separated by
+  dividers: Deflection rate 68% · Conversations 214 · Tickets created 34,
+  with a muted "Full analytics coming soon".
+
+Realistic Indian employee names, August 2026 dates. Denser than the employee
+dashboard: tighter row spacing, more information per square inch.
+```
+
+## PROMPT 4C — IT Support dashboard
+
+```
+Build the IT SUPPORT dashboard. It answers "what's in my queue?" — this is a
+single prioritised work list and NOTHING else.
+
+CRITICAL: no stat cards at all. No metric strip. This is the strongest visual
+difference from the HR and employee dashboards — this role opens the app to
+work through a queue, so the queue is the entire page.
+
+Header: "IT Support Queue" with a muted count "12 open · 3 unassigned", and a
+segmented control on the right: All / Unassigned / Mine / Resolved.
+
+Left rail, 200px, sticky: filter checkboxes grouped under small uppercase
+headings —
+  Priority: Critical, High, Medium, Low (each with a count)
+  Status: Open, In Progress, Waiting on user
+  Age: Today, This week, Older than 7 days
+
+Main area: a full-height ticket list. NOT a data table — use list rows, each
+one 72px:
+- A 4px full-height coloured bar on the left edge: rose Critical, amber High,
+  indigo Medium, zinc Low
+- Ticket ID in mono tabular-nums (#IT-1042), then the subject in font-medium
+- Second line, muted: requester name · department · opened relative time
+- Right side: an SLA countdown chip ("4h left" emerald, "overdue" rose), an
+  assignee Avatar or a dashed "Assign" button when unassigned, and a status
+  Badge
+Rows highlight on hover with a zinc-50 background and a subtle left-edge glow.
+
+Eight rows covering realistic IT issues: VPN not connecting, laptop won't
+power on, password reset, email sync failure, printer access, software
+licence request, monitor not detected, MFA device lost. Mix priorities and
+include two unassigned and one overdue.
+
+Empty state: emerald check-circle, "Queue clear", "No open tickets assigned
+to you."
+
+This page should feel like a triage tool — dense, scannable, colour-coded by
+urgency. No cards, no charts, no greeting.
+```
+
+## PROMPT 4D — Admin dashboard
+
+```
+Build the ADMIN dashboard. It answers "is the system healthy and who has
+access?" — governance and oversight, not day-to-day work. It must NOT contain
+leave balances or ticket queues; admin does not do HR or IT work.
+
+Header: "System overview" with subtext "Nexora Technologies · assistify.app".
+On the right, a primary "Invite staff" button.
+
+Section 1 — a health strip: four small pill indicators in a row, each a
+coloured dot + label + value:
+  API healthy · Database connected · 48 active users · Last backup 2h ago
+Emerald dots for healthy. Keep it compact and understated.
+
+Section 2 — two columns:
+  Left (1/2): "Users by role" card. NOT numbers in boxes — a horizontal
+  stacked bar showing the role split, then a legend list beneath it with a
+  colour swatch, role name, count and percentage, tabular-nums:
+    Employee 42 (87%) · HR 3 (6%) · IT Support 2 (4%) · Admin 1 (2%)
+
+  Right (1/2): "Pending invitations" card. Compact table, four rows:
+  email, role Badge, invited-by, and an amber "Expires in 41h" chip. Each row
+  has a small ghost "Resend" button. Card footer: "3 invitations expired this
+  week" with a "Review" link.
+
+Section 3 — full width: "Audit log" card. This is the admin dashboard's
+signature element and must look distinctly different from every other table
+in the app: render it as a monospace stream, one line per entry, alternating
+zinc-50 backgrounds, like a terminal:
+  14:32:07  priya@nexora.com    USER_INVITED       rahul@nexora.com
+  14:28:41  system              AI_TICKET_CREATED  #HR-0231
+  13:55:12  priya@nexora.com    LEAVE_APPROVED     req_8842
+Six entries. Actor column indigo, action column font-semibold, AI-initiated
+actions prefixed with a small sparkle icon and tinted differently to
+human actions. Footer link: "View full audit log".
+
+Section 4 — "Company configuration" card: a two-column definition list —
+Annual leave 18 days · Casual leave 12 · Sick leave 8 · Working days Mon–Fri ·
+Timezone Asia/Kolkata · Domain nexora.com. Each with a small "Edit" ghost
+link on hover.
+
+Restrained and administrative in tone. No greeting, no big colourful numbers.
+```
+
+---
+
+# PROMPT 4 — Employee dashboard ⭐ (SUPERSEDED — use 4A)
 
 ```
 Build the employee dashboard, route "/dashboard". This renders inside the app
@@ -272,7 +489,7 @@ submitted — HR will review it shortly."
 
 ---
 
-# PROMPT 6 — HR dashboard
+# PROMPT 6 — HR dashboard (SUPERSEDED — use 4B)
 
 ```
 Build the HR dashboard, route "/hr", inside the app shell.
