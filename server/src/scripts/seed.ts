@@ -64,6 +64,38 @@ async function seed(): Promise<void> {
     activatedAt: new Date('2024-06-03'),
   });
 
+  // Admin and IT Support exist so all four role dashboards are reachable in
+  // development. Neither appears in the Aug 16 demo script, but without them
+  // those two views cannot be logged into and therefore cannot be built.
+  await UserModel.create({
+    companyId: nexora._id,
+    email: 'admin@nexora.com',
+    fullName: 'Vikram Malhotra',
+    role: 'admin',
+    status: 'ACTIVE',
+    employeeId: 'NEX-ADM-001',
+    department: 'Administration',
+    designation: 'System Administrator',
+    dateOfJoining: new Date('2022-11-01'),
+    passwordHash,
+    activatedAt: new Date('2022-11-01'),
+  });
+
+  await UserModel.create({
+    companyId: nexora._id,
+    email: 'it@nexora.com',
+    fullName: 'Rohan Patel',
+    role: 'it_support',
+    status: 'ACTIVE',
+    employeeId: 'NEX-IT-007',
+    department: 'IT Operations',
+    designation: 'IT Support Engineer',
+    dateOfJoining: new Date('2023-08-21'),
+    reportingManagerId: hr._id,
+    passwordHash,
+    activatedAt: new Date('2023-08-21'),
+  });
+
   // ── Tenant 2 — Vertex Solutions ────────────────────────────────────────────
   // Not for the demo. Its only job is to be a neighbour Nexora must never see.
   const vertex = await CompanyModel.create({
@@ -110,6 +142,8 @@ async function seed(): Promise<void> {
   console.table([
     { tenant: 'Nexora (demo)', role: 'hr', email: 'hr@nexora.com' },
     { tenant: 'Nexora (demo)', role: 'employee', email: 'employee@nexora.com' },
+    { tenant: 'Nexora (dev only)', role: 'admin', email: 'admin@nexora.com' },
+    { tenant: 'Nexora (dev only)', role: 'it_support', email: 'it@nexora.com' },
     { tenant: 'Vertex (isolation only)', role: 'hr', email: 'hr@vertex.io' },
     { tenant: 'Vertex (isolation only)', role: 'employee', email: 'employee@vertex.io' },
   ]);
