@@ -1,0 +1,30 @@
+# Render blueprint for the Assistify API.
+# Render → New → Blueprint → point at this repo. Secrets marked sync:false must
+# be filled in the dashboard; never commit them.
+
+services:
+  - type: web
+    name: assistify-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000            # Render injects this; the app reads process.env.PORT
+      - key: CLIENT_URL
+        sync: false             # your Vercel URL, e.g. https://assistify.vercel.app
+      - key: MONGO_URI
+        sync: false             # MongoDB Atlas SRV connection string
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL
+        value: 7d
