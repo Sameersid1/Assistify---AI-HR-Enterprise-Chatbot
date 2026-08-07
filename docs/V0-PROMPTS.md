@@ -461,7 +461,197 @@ Use realistic Indian names and dates in 2026. All numbers tabular-nums.
 
 ---
 
-# PROMPT 5 — Apply leave dialog
+# AUG 10–12 SET — invitations, activation, apply leave
+
+> ⚠️ **These three screens are different from everything before them: the invite
+> and activation endpoints are ALREADY BUILT and working.** Do not mock them.
+> Verified live on 2026-08-10:
+> `POST /users/invite` → 201, user `INVITED`, returns a real `activationUrl`
+> → `GET /auth/invitation/:token` → returns the invitee's details.
+>
+> Apply-leave has no backend yet, so that one stays on mock data.
+
+## The decision that saves you a day
+
+**"Add Employee" and "Add HR/IT" are the SAME component**, parameterised by
+which roles the current user may create. Do not build two invitation screens.
+
+```
+HR    → /app/employees → "Add employee" → /app/employees/new
+                                            <InviteUserForm allowedRoles={["employee"]} />
+
+Admin → /app/users     → "Add staff"    → /app/users/new
+                                            <InviteUserForm allowedRoles={["hr","it_support"]} />
+```
+
+Same form, same validation, same success dialog. Only the role selector differs.
+
+This mirrors decision **D22**: HR may create only `employee`; admin may create
+`hr` and `it_support`. The server enforces the same whitelist independently — if
+the UI ever offers a role it shouldn't, the API returns 403. The permission
+matrix already proves this (19/19).
+
+## The exact API contract — give this to the generator
+
+```
+POST /api/v1/users/invite          (Bearer token required)
+  body: { email, fullName, role, employeeId?, department?,
+          designation?, dateOfJoining?, reportingManagerId? }
+  → 201 { success: true, data: {
+            user: { id, email, fullName, role, status: "INVITED", ... },
+            activationUrl: "http://localhost:5173/activate?token=<64 hex>"
+          }}
+  NOTE: there is NO companyId field. It comes from the inviter's JWT.
+        Sending one is ignored — never add it to the form.
+
+GET /api/v1/auth/invitation/:token          (public)
+  → 200 { success: true, data: { email, fullName, role } }
+  → 400/404 if expired or already used
+
+POST /api/v1/auth/activate                  (public)
+  body: { token, password }
+  → 201 { success: true, data: { user, accessToken, refreshToken } }
+```
+
+All calls go through `src/lib/api.ts` — never raw `fetch`.
+`api.post()` for authenticated, `api.publicGet()` / `api.publicPost()` otherwise.
+
+---
+
+## PROMPT A — InviteUserForm (shared by HR and Admin) ⭐
+
+```
+Build a reusable InviteUserForm component for Assistify, plus the two thin
+pages that wrap it. React 19 + TypeScript + Vite + Tailwind + shadcn/ui.
+No Next.js APIs. react-router-dom for navigation.
+
+The component signature:
+  <InviteUserForm allowedRoles={UserRole[]} backTo={string} title={string} />
+
+It is used in exactly two places and must not be duplicated:
+  /app/employees/new  → allowedRoles={["employee"]}            title "Add employee"
+  /app/users/new      → allowedRoles={["hr","it_support"]}     title "Add staff"
+
+LAYOUT
+Back link ("← Employees" or "← Users") above a page header showing `title`,
+with subtext "They'll receive an invitation link to activate their account."
+One card, max-w-2xl, sections separated by a Separator.
+
+Section "Personal details" — 2-column grid:
+  Full name (required)
+  Work email (required). Below it, a helper line: if the typed domain is not
+  nexora.com, show an AMBER WARNING, not an error:
+    "This isn't a recognised company domain. You can still send the invitation."
+  The submit button stays enabled — this is a typo guard for HR, never a block.
+
+Section "Employment details" — 2-column grid:
+  Employee ID, Department (Select: Engineering, Design, Sales, Finance,
+  Human Resources, IT Operations), Designation,
+  Date of joining (Popover + Calendar)
+
+Section "Access":
+  Role — a RadioGroup built from the `allowedRoles` prop.
+  When allowedRoles has one entry, render it selected and disabled, with a
+  muted note underneath: "Only an administrator can create HR or IT accounts."
+  When it has several, render them as selectable cards with a one-line
+  description each:
+    HR — "Approves leave, manages employees and HR tickets"
+    IT Support — "Handles IT tickets only. No access to HR data."
+
+  NEVER render a company field. Tenancy comes from the signed-in user's token.
+
+SUBMIT
+POST to /users/invite via api.post(). On 403 show the API's error message in a
+destructive Alert (this happens if a role is attempted that the server's
+whitelist forbids). On 409 show "An account with this email already exists."
+
+SUCCESS DIALOG — the most important part of this screen:
+- Emerald check-circle in a circle at the top
+- "Invitation created", subtext "Share this link with {fullName}. It expires
+  in 72 hours."
+- A read-only Input containing the activationUrl returned by the API, with a
+  "Copy" Button attached on the right that becomes a check icon + "Copied"
+  for two seconds after clicking
+- A muted note: "Email delivery is coming soon — for now, send this link
+  through your usual channel."
+- Footer: "Add another" (ghost, resets the form) and "Done" (primary,
+  navigates back to the list)
+
+Also generate loading (spinner in the submit button) and error states.
+Use react-hook-form + zod. Realistic Indian names in placeholders.
+```
+
+## PROMPT B — Activation page (real API)
+
+```
+Build the account activation page at route /activate?token=..., for a React 19
++ Vite + shadcn app. This is PUBLIC — it renders outside the authenticated
+app shell. No Next.js APIs.
+
+Read the token with useSearchParams. On mount, call
+  api.publicGet(`/auth/invitation/${token}`)
+which returns { email, fullName, role }.
+
+Centered card, max-w-md, with the Assistify wordmark above it.
+Render three distinct states:
+
+1. VALIDATING — Skeleton placeholders and "Checking your invitation…"
+
+2. VALID — the form:
+   - "Set your password", subtext "You've been invited to join Nexora
+     Technologies as {role}."
+   - A read-only field showing the invited email, muted, with a lock icon
+   - Password + Confirm password, each with a show/hide eye toggle
+   - A live strength meter: four segments that fill and change colour, plus a
+     checklist that ticks emerald as each rule is met —
+     at least 8 characters, one uppercase, one number, one symbol
+   - Checkbox, required: "I have read and accept the Employee Handbook"
+   - Full-width primary "Activate account" button
+
+   Submits to api.publicPost("/auth/activate", { token, password }).
+   The response is { user, accessToken, refreshToken } — the same shape as
+   login. On success, store the tokens and navigate to /app: the user is now
+   signed in and must NOT be sent back to the login page.
+
+3. INVALID / EXPIRED — centered empty state: amber alert-triangle,
+   "This invitation has expired", explanation that links are valid for 72
+   hours, and a secondary "Contact your HR team" button.
+
+Password rules must match the server's, or activation fails server-side after
+the user has already typed everything twice.
+```
+
+## PROMPT C — Apply leave dialog (mock data — no backend yet)
+
+```
+Build an "Apply for leave" dialog (shadcn Dialog, sm:max-w-lg) opened from the
+Employee dashboard. React 19 + Vite + shadcn. No Next.js APIs.
+
+THERE IS NO LEAVE ENDPOINT YET — use local mock state and a simulated 600ms
+delay. Keep all data in one `MOCK_BALANCES` constant at the top of the file so
+it is a one-line change to swap in a real API call later.
+
+Fields (react-hook-form + zod):
+1. Leave type — Select with the available count shown muted inside each option:
+   Casual Leave (8 available), Sick Leave (5), Earned Leave (14)
+2. Date range — one Popover containing a range Calendar. Trigger button shows
+   "12 Aug 2026 – 14 Aug 2026", or "Pick dates" when empty.
+3. An auto-calculated summary strip below the dates: a bordered zinc-50 row,
+   "3 working days" on the left and "5 remaining after this request" on the
+   right, both tabular-nums. Weekends excluded from the day count.
+   If the request exceeds the balance the strip turns rose and reads
+   "Exceeds available balance".
+4. Reason — Textarea, 3 rows, character counter, max 500.
+
+Footer: "Cancel" ghost, "Submit request" primary. Submit is disabled while the
+balance is exceeded or the form is invalid, and shows a spinner while
+submitting. On success close the dialog and fire a sonner toast:
+"Leave request submitted — HR will review it shortly."
+```
+
+---
+
+# PROMPT 5 — Apply leave dialog (SUPERSEDED — use Prompt C above)
 
 ```
 Build an "Apply for leave" dialog (shadcn Dialog), opened from the employee
