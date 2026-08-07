@@ -4,8 +4,10 @@ import { AuthProvider } from "@/context/AuthContext"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { LandingPage } from "@/pages/LandingPage"
 import { LoginPage } from "@/pages/LoginPage"
+import { ActivationPage } from "@/pages/ActivationPage"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { DashboardPage } from "@/pages/DashboardPage"
+import { ApplyLeavePage } from "@/pages/ApplyLeavePage"
 import { ChatPage } from "@/pages/ChatPage"
 import { EmployeesPage } from "@/pages/EmployeesPage"
 import { LeaveApprovalsPage } from "@/pages/LeaveApprovalsPage"
@@ -28,11 +30,18 @@ export function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            {/* Public */}
+            {/* ── Public ────────────────────────────────────────────────── */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
 
-            {/* Authenticated shell — everything below requires a valid session */}
+            {/* Activation must stay public — the invitee has no session yet.
+                The server generates links as /activate?token=<hex>, so the
+                query form is the one that actually gets used; the /:token
+                path variant is kept as a convenience alias. */}
+            <Route path="/activate" element={<ActivationPage />} />
+            <Route path="/activate/:token" element={<ActivationPage />} />
+
+            {/* ── Authenticated shell ───────────────────────────────────── */}
             <Route
               path="/app"
               element={
@@ -45,7 +54,9 @@ export function App() {
               <Route index element={<DashboardPage />} />
               <Route path="chat" element={<ChatPage />} />
               <Route path="my-tickets" element={<MyTicketsPage />} />
+              <Route path="documents" element={<DocumentsPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="apply-leave" element={<ApplyLeavePage />} />
 
               {/* HR */}
               <Route
@@ -55,10 +66,6 @@ export function App() {
               <Route
                 path="leave-approvals"
                 element={<ProtectedRoute roles={[...HR_ONLY]}><LeaveApprovalsPage /></ProtectedRoute>}
-              />
-              <Route
-                path="documents"
-                element={<ProtectedRoute roles={[...HR_ONLY]}><DocumentsPage /></ProtectedRoute>}
               />
               <Route
                 path="tickets"

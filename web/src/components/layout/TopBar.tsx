@@ -29,6 +29,7 @@ interface TopBarProps {
 const ROUTE_TITLES: Record<string, string> = {
   "/app": "Dashboard",
   "/app/chat": "HR Assistant Chat",
+  "/app/apply-leave": "Apply for Time Off",
   "/app/my-tickets": "My Tickets",
   "/app/employees": "Employee Directory",
   "/app/leave-approvals": "Leave Approvals",

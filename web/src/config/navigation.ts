@@ -4,6 +4,7 @@ import {
   Ticket,
   Users2,
   CalendarCheck,
+  CalendarDays,
   FileText,
   LifeBuoy,
   BarChart3,
@@ -12,12 +13,7 @@ import {
   Settings,
   ShieldAlert,
   Sparkles,
-  Bot,
-  Layers,
-  History,
-  CalendarDays,
-  ShieldCheck,
-  Cpu,
+  CalendarPlus,
   type LucideIcon,
 } from "lucide-react"
 import { type UserRole } from "@/context/AuthContext"
@@ -38,10 +34,10 @@ export interface NavGroup {
 }
 
 /**
- * super_admin is omitted here on purpose — it is a platform-level role
- * (company provisioning) that is still a SHOULD-HAVE, not built yet. Until it
- * has its own nav it falls back to the admin menu via the lookup below, so we
- * type this as Partial rather than inventing an empty entry.
+ * super_admin is omitted on purpose — it is a platform-level role (company
+ * provisioning) that is still a SHOULD-HAVE and not built. It falls back to the
+ * admin menu in the lookup below, so we type this Partial rather than invent an
+ * empty entry. (Re-applied after each frontend regeneration.)
  */
 export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
   employee: [
@@ -53,6 +49,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           icon: LayoutDashboard,
           href: "/app",
           roles: ["employee"],
+        },
+        {
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["employee"],
+          badge: "New",
+          badgeVariant: "active",
         },
         {
           label: "HR Assistant Chat",
@@ -104,49 +108,33 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           badgeVariant: "pending",
         },
         {
-          label: "Support Tickets",
-          icon: LifeBuoy,
-          href: "/app/tickets",
-          roles: ["hr"],
-          badge: 12,
-          badgeVariant: "default",
-        },
-      ],
-    },
-    {
-      groupTitle: "People & Ops",
-      items: [
-        {
-          label: "Employees Directory",
+          label: "Employee Directory",
           icon: Users2,
           href: "/app/employees",
           roles: ["hr"],
-          badge: 48,
-          badgeVariant: "inactive",
         },
         {
-          label: "Policy Documents",
-          icon: FileText,
-          href: "/app/documents",
+          label: "Support Tickets",
+          icon: Ticket,
+          href: "/app/tickets",
           roles: ["hr"],
-        },
-        {
-          label: "Analytics & Trends",
-          icon: BarChart3,
-          href: "/app/analytics",
-          roles: ["hr"],
-          badge: "New",
-          badgeVariant: "active",
+          badge: 12,
         },
       ],
     },
     {
-      groupTitle: "Copilot",
+      groupTitle: "Operations",
       items: [
         {
-          label: "Assistant Chat",
-          icon: MessageSquare,
-          href: "/app/chat",
+          label: "HR Analytics",
+          icon: BarChart3,
+          href: "/app/analytics",
+          roles: ["hr"],
+        },
+        {
+          label: "Company Policies",
+          icon: FileText,
+          href: "/app/documents",
           roles: ["hr"],
         },
       ],
@@ -155,10 +143,10 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
 
   admin: [
     {
-      groupTitle: "System Governance",
+      groupTitle: "Governance",
       items: [
         {
-          label: "System Overview",
+          label: "Dashboard",
           icon: LayoutDashboard,
           href: "/app",
           roles: ["admin"],
@@ -168,38 +156,13 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           icon: UserCog,
           href: "/app/users",
           roles: ["admin"],
-          badge: 48,
-          badgeVariant: "inactive",
+          badge: "RBAC",
+          badgeVariant: "active",
         },
         {
-          label: "Organization Settings",
+          label: "System Settings",
           icon: Settings,
           href: "/app/settings",
-          roles: ["admin"],
-        },
-      ],
-    },
-    {
-      groupTitle: "Security & Infrastructure",
-      items: [
-        {
-          label: "IT Tickets & Nodes",
-          icon: Terminal,
-          href: "/app/it-tickets",
-          roles: ["admin"],
-          badge: 3,
-          badgeVariant: "pending",
-        },
-        {
-          label: "Policy & Documents",
-          icon: FileText,
-          href: "/app/documents",
-          roles: ["admin"],
-        },
-        {
-          label: "AI Model Tuning",
-          icon: Bot,
-          href: "/app/chat",
           roles: ["admin"],
         },
       ],
@@ -208,7 +171,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
 
   it_support: [
     {
-      groupTitle: "Support Console",
+      groupTitle: "IT Queue",
       items: [
         {
           label: "Dashboard",
@@ -218,24 +181,18 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
         },
         {
           label: "IT Tickets",
-          icon: Terminal,
+          icon: LifeBuoy,
           href: "/app/it-tickets",
           roles: ["it_support"],
-          badge: 3,
-          badgeVariant: "default",
-        },
-        {
-          label: "Support Chat",
-          icon: MessageSquare,
-          href: "/app/chat",
-          roles: ["it_support"],
+          badge: 5,
+          badgeVariant: "pending",
         },
       ],
     },
   ],
 }
 
-export function getNavigationGroupsForRole(role: UserRole): NavGroup[] {
+export const getNavigationGroupsForRole = (role: UserRole): NavGroup[] => {
   if (role === "super_admin") return NAVIGATION_GROUPS.admin ?? []
   return NAVIGATION_GROUPS[role] ?? NAVIGATION_GROUPS.employee ?? []
 }

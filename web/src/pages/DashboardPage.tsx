@@ -1,5 +1,5 @@
 import React, { useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   CheckCircle2,
@@ -19,6 +19,8 @@ import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { AddEmployeeModal, type EmployeeData } from "@/components/modals/AddEmployeeModal"
+import { InviteStaffModal, type StaffInviteData } from "@/components/modals/InviteStaffModal"
 
 // ==========================================
 // 1. CIRCULAR PROGRESS RING (PROMINENT 70PX)
@@ -117,24 +119,8 @@ const UPCOMING_HOLIDAYS = [
 
 const EmployeeDashboardView: React.FC = () => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [requests, setRequests] = useState<EmployeeRequest[]>(INITIAL_EMPLOYEE_REQUESTS)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [newType, setNewType] = useState("Casual Leave")
-  const [newDates, setNewDates] = useState("20 Aug – 21 Aug 2026")
-  const [newDays, setNewDays] = useState(2)
-
-  const handleCreateRequest = (e: React.FormEvent) => {
-    e.preventDefault()
-    const newReq: EmployeeRequest = {
-      id: `REQ-${Date.now().toString().slice(-4)}`,
-      type: newType,
-      dates: newDates,
-      days: Number(newDays),
-      status: "pending",
-    }
-    setRequests([newReq, ...requests])
-    setIsModalOpen(false)
-  }
 
   const getStatusBadge = (status: "approved" | "pending" | "rejected") => {
     switch (status) {
@@ -159,45 +145,62 @@ const EmployeeDashboardView: React.FC = () => {
             Nexora Technologies · Employee Self-Service
           </p>
         </div>
-        <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 tabular-nums">
-          Thursday, 6 August 2026
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 tabular-nums hidden sm:inline">
+            Thursday, 6 August 2026
+          </span>
+          <Link to="/app/apply-leave">
+            <Button
+              size="sm"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white h-8.5 text-xs font-bold gap-1.5 px-3.5 shadow-2xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Apply for Leave</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
       {/* Section 1: Three Large Balance Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs">
-          <div className="space-y-1.5 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Casual Leave
-            </p>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">of 12 total</p>
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">4 used this year</p>
+        <Link to="/app/apply-leave" className="block transition-transform hover:-translate-y-0.5">
+          <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs hover:border-indigo-500 transition-colors">
+            <div className="space-y-1.5 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Casual Leave
+              </p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">of 12 total</p>
+              <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">4 used this year</p>
+            </div>
+            <CircularProgressRing value={8} total={12} size={70} />
           </div>
-          <CircularProgressRing value={8} total={12} size={70} />
-        </div>
+        </Link>
 
-        <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs">
-          <div className="space-y-1.5 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Sick Leave
-            </p>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">of 8 total</p>
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">3 used this year</p>
+        <Link to="/app/apply-leave" className="block transition-transform hover:-translate-y-0.5">
+          <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs hover:border-amber-500 transition-colors">
+            <div className="space-y-1.5 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Sick Leave
+              </p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">of 8 total</p>
+              <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">3 used this year</p>
+            </div>
+            <CircularProgressRing value={5} total={8} size={70} />
           </div>
-          <CircularProgressRing value={5} total={8} size={70} />
-        </div>
+        </Link>
 
-        <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs">
-          <div className="space-y-1.5 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Earned Leave
-            </p>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">of 18 total</p>
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">4 used this year</p>
+        <Link to="/app/apply-leave" className="block transition-transform hover:-translate-y-0.5">
+          <div className="rounded-xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 flex items-center justify-between shadow-xs hover:border-emerald-500 transition-colors">
+            <div className="space-y-1.5 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Earned Leave
+              </p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">of 18 total</p>
+              <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">4 used this year</p>
+            </div>
+            <CircularProgressRing value={14} total={18} size={70} />
           </div>
-          <CircularProgressRing value={14} total={18} size={70} />
-        </div>
+        </Link>
       </div>
 
       {/* Section 2: Two Columns */}
@@ -208,14 +211,15 @@ const EmployeeDashboardView: React.FC = () => {
             <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
               Recent requests
             </h2>
-            <Button
-              size="sm"
-              onClick={() => setIsModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs font-semibold gap-1.5 px-3.5 shadow-2xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>New request</span>
-            </Button>
+            <Link to="/app/apply-leave">
+              <Button
+                size="sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs font-semibold gap-1.5 px-3.5 shadow-2xs"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New request</span>
+              </Button>
+            </Link>
           </div>
 
           <div className="overflow-x-auto">
@@ -305,53 +309,12 @@ const EmployeeDashboardView: React.FC = () => {
           </Button>
         </Link>
       </div>
-
-      {/* Interactive Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Submit New Request</h3>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleCreateRequest} className="space-y-4 text-sm">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">Leave Type</label>
-                <select
-                  value={newType}
-                  onChange={(e) => setNewType(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-2 px-3 text-sm"
-                >
-                  <option value="Casual Leave">Casual Leave</option>
-                  <option value="Sick Leave">Sick Leave</option>
-                  <option value="Earned Leave">Earned Leave</option>
-                  <option value="WFH Exception">WFH Exception</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">Dates Range</label>
-                <Input value={newDates} onChange={(e) => setNewDates(e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">Days</label>
-                <Input type="number" min="1" max="30" value={newDays} onChange={(e) => setNewDays(Number(e.target.value))} className="h-9 text-sm" />
-              </div>
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)} className="text-xs h-8">Cancel</Button>
-                <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold h-8 px-4">Submit Request</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 // =========================================================================
-// 4. HR WORK QUEUE DASHBOARD (Large Cards, Crisp Borders, No Clipped Edges)
+// 4. HR WORK QUEUE DASHBOARD (With Add Employee Integration)
 // =========================================================================
 interface HRLeaveRequest {
   id: string
@@ -374,9 +337,15 @@ const INITIAL_HR_REQUESTS: HRLeaveRequest[] = [
 
 const HRWorkQueueDashboardView: React.FC = () => {
   const [requests, setRequests] = useState<HRLeaveRequest[]>(INITIAL_HR_REQUESTS)
+  const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false)
+  const [newJoinerCount, setNewJoinerCount] = useState(3)
 
   const handleAction = (id: string, status: "approved" | "rejected") => {
     setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)))
+  }
+
+  const handleAddEmployee = (emp: EmployeeData) => {
+    setNewJoinerCount((prev) => prev + 1)
   }
 
   return (
@@ -391,12 +360,24 @@ const HRWorkQueueDashboardView: React.FC = () => {
             Nexora Technologies · 48 employees
           </p>
         </div>
-        <Link to="/app/leave-approvals">
-          <Button variant="ghost" size="sm" className="text-sm font-semibold h-8 text-zinc-700 hover:text-zinc-900 dark:text-zinc-300">
-            <span>View all</span>
-            <ArrowRight className="ml-1.5 h-4 w-4" />
+
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            onClick={() => setIsAddEmployeeOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white h-8.5 text-xs font-bold gap-1.5 px-4 shadow-sm ring-1 ring-indigo-500/50"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>+ Add Employee</span>
           </Button>
-        </Link>
+
+          <Link to="/app/leave-approvals">
+            <Button variant="ghost" size="sm" className="text-sm font-semibold h-8.5 text-zinc-700 hover:text-zinc-900 dark:text-zinc-300">
+              <span>View all</span>
+              <ArrowRight className="ml-1.5 h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Section 1: Thin Metric Strip */}
@@ -414,9 +395,19 @@ const HRWorkQueueDashboardView: React.FC = () => {
             <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">On Leave Today</p>
             <p className="text-3xl font-black tabular-nums text-zinc-900 dark:text-zinc-100 mt-0.5 leading-tight">4</p>
           </div>
-          <div className="py-3.5 px-5">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">New Joiners</p>
-            <p className="text-3xl font-black tabular-nums text-zinc-900 dark:text-zinc-100 mt-0.5 leading-tight">3</p>
+          <div className="py-3.5 px-5 flex items-center justify-between">
+            <div className="text-left">
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">New Joiners</p>
+              <p className="text-3xl font-black tabular-nums text-indigo-600 dark:text-indigo-400 mt-0.5 leading-tight">{newJoinerCount}</p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setIsAddEmployeeOpen(true)}
+              variant="outline"
+              className="h-7 px-2 text-xs font-semibold border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
+            >
+              + Add
+            </Button>
           </div>
         </div>
       </div>
@@ -430,7 +421,17 @@ const HRWorkQueueDashboardView: React.FC = () => {
             </h2>
             <Badge variant="pending" className="text-xs py-0.5 px-2 font-mono font-bold">4 items</Badge>
           </div>
-          <span className="text-xs font-medium text-zinc-400">Priority queue</span>
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsAddEmployeeOpen(true)}
+              className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline h-7 px-2"
+            >
+              + Add Employee
+            </Button>
+            <span className="text-xs font-medium text-zinc-400">Priority queue</span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -551,12 +552,19 @@ const HRWorkQueueDashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Add Employee Modal */}
+      <AddEmployeeModal
+        isOpen={isAddEmployeeOpen}
+        onClose={() => setIsAddEmployeeOpen(false)}
+        onAddEmployee={handleAddEmployee}
+      />
     </div>
   )
 }
 
 // =========================================================================
-// 5. ADMIN DASHBOARD (Large Cards, Crisp Borders, No Clipped Edges)
+// 5. ADMIN DASHBOARD (With Invite Staff Integration)
 // =========================================================================
 interface PendingInvite {
   id: string
@@ -581,8 +589,6 @@ const AUDIT_LOGS = [
 const AdminDashboardView: React.FC = () => {
   const [invites, setInvites] = useState<PendingInvite[]>(INITIAL_INVITES)
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState("Employee")
   const [resentId, setResentId] = useState<string | null>(null)
 
   const handleResend = (id: string) => {
@@ -590,12 +596,14 @@ const AdminDashboardView: React.FC = () => {
     setTimeout(() => setResentId(null), 2000)
   }
 
-  const handleSendInvite = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inviteEmail) return
-    setInvites([{ id: `inv-${Date.now()}`, email: inviteEmail, role: inviteRole, expiresIn: "72h" }, ...invites])
-    setInviteEmail("")
-    setIsInviteModalOpen(false)
+  const handleInviteStaff = (staff: StaffInviteData) => {
+    const newInv: PendingInvite = {
+      id: staff.id,
+      email: staff.email,
+      role: staff.role.toUpperCase(),
+      expiresIn: staff.expiresIn,
+    }
+    setInvites([newInv, ...invites])
   }
 
   return (
@@ -615,7 +623,7 @@ const AdminDashboardView: React.FC = () => {
           className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs font-bold gap-1.5 px-3.5 shadow-2xs"
         >
           <UserPlus className="h-4 w-4" />
-          <span>Invite staff</span>
+          <span>Invite HR / Staff</span>
         </Button>
       </div>
 
@@ -761,38 +769,12 @@ const AdminDashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Invite Modal */}
-      {isInviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Invite Staff Member</h3>
-              <button type="button" onClick={() => setIsInviteModalOpen(false)} className="text-zinc-400 hover:text-zinc-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSendInvite} className="space-y-4 text-sm">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">Staff Email</label>
-                <Input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@nexora.com" className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">Role</label>
-                <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-2 px-3 text-sm">
-                  <option value="Employee">Employee</option>
-                  <option value="HR">HR Manager</option>
-                  <option value="IT Support">IT Support</option>
-                  <option value="Admin">Administrator</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsInviteModalOpen(false)} className="text-xs h-8">Cancel</Button>
-                <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold h-8 px-4">Send Invite</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Invite Staff Modal */}
+      <InviteStaffModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        onInviteStaff={handleInviteStaff}
+      />
     </div>
   )
 }

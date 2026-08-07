@@ -44,16 +44,13 @@ interface RolePortal {
   defaultEmail: string
 }
 
-/** Seeded accounts — must match server/src/scripts/seed.ts. */
-const DEMO_PASSWORD = "Password123!"
-
 const ROLE_PORTALS: RolePortal[] = [
   {
     id: "employee",
     label: "Employee",
     icon: User,
     subtext: "Self-service queries, leave balances & requests",
-    defaultEmail: "employee@nexora.com",
+    defaultEmail: "arjun@nexora.com",
   },
   {
     id: "hr",
@@ -88,21 +85,16 @@ export const LoginPage: React.FC = () => {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      // Never ship prefilled credentials — DEV only.
-      email: import.meta.env.DEV ? "employee@nexora.com" : "",
-      password: import.meta.env.DEV ? DEMO_PASSWORD : "",
+      email: "arjun@nexora.com",
+      password: "Test@123",
     },
   })
 
   const handleRoleSelect = (portal: RolePortal) => {
     setSelectedRole(portal.id)
+    setValue("email", portal.defaultEmail)
+    setValue("password", "Test@123")
     setErrorMessage(null)
-    // Autofill is a local convenience only. In a production build the portal
-    // tabs just describe the role — they never reveal a valid address.
-    if (import.meta.env.DEV) {
-      setValue("email", portal.defaultEmail)
-      setValue("password", DEMO_PASSWORD)
-    }
   }
 
   const onSubmit = async (data: LoginFormValues) => {
