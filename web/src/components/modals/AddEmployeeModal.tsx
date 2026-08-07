@@ -19,11 +19,14 @@ import {
   Copy,
   Sparkles,
   ShieldCheck,
+  Send,
+  UserCheck,
 } from "lucide-react"
 
 export interface EmployeeData {
   name: string
   email: string
+  personalEmail?: string
   role: string
   dept: string
   joined: string
@@ -46,6 +49,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     firstName: "",
     lastName: "",
     email: "",
+    personalEmail: "",
     department: "Engineering",
     designation: "",
     employmentType: "Full-time",
@@ -64,6 +68,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     const newEmp: EmployeeData = {
       name: fullName,
       email: formData.email,
+      personalEmail: formData.personalEmail || formData.email,
       role: formData.designation || "Software Engineer",
       dept: formData.department,
       joined: new Date(formData.joiningDate).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
@@ -73,9 +78,10 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
     onAddEmployee(newEmp)
 
-    // Generate mock activation token
+    // Generate activation token and link with both work and personal email
     const token = `act_${Math.random().toString(36).substring(2, 10)}`
-    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&role=employee&name=${encodeURIComponent(fullName)}`
+    const sendToEmail = formData.personalEmail || formData.email
+    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&personalEmail=${encodeURIComponent(sendToEmail)}&role=employee&name=${encodeURIComponent(fullName)}`
     setCreatedInviteLink(activationUrl)
   }
 
@@ -93,6 +99,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       firstName: "",
       lastName: "",
       email: "",
+      personalEmail: "",
       department: "Engineering",
       designation: "",
       employmentType: "Full-time",
@@ -116,7 +123,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 Add New Employee
               </DialogTitle>
               <DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Create employee profile, assign department, and dispatch activation invite
+                Create profile, allocate standard leave quota, and email activation link to personal inbox
               </DialogDescription>
             </div>
           </div>
@@ -129,12 +136,20 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               <CheckCircle2 className="h-8 w-8" />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Employee Added Successfully!
+                Employee Registered & Activation Dispatched!
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-                An invitation email has been queued for <strong>{formData.email}</strong> with standard 18/12/8 leave allocation.
+                Activation invitation sent to personal inbox:{" "}
+                <strong className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                  {formData.personalEmail || formData.email}
+                </strong>
+                {formData.personalEmail && (
+                  <span className="block text-[11px] text-zinc-400 mt-0.5">
+                    (Corporate account: {formData.email})
+                  </span>
+                )}
               </p>
             </div>
 
@@ -197,21 +212,40 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               </div>
             </div>
 
-            {/* Email Field */}
-            <div className="space-y-1.5">
-              <label className="font-semibold text-zinc-700 dark:text-zinc-300">
-                Work Email <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-                <Input
-                  type="email"
-                  required
-                  placeholder="arjun@nexora.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="h-9 pl-9 text-xs"
-                />
+            {/* Work Email & Personal Email Fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                  Work Email (Corporate) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                  <Input
+                    type="email"
+                    required
+                    placeholder="arjun@nexora.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="h-9 pl-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                  <span>Personal Email (For Invite)</span>
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-normal">Sends link here</span>
+                </label>
+                <div className="relative">
+                  <Send className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                  <Input
+                    type="email"
+                    placeholder="arjun.personal@gmail.com"
+                    value={formData.personalEmail}
+                    onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })}
+                    className="h-9 pl-9 text-xs"
+                  />
+                </div>
               </div>
             </div>
 
@@ -287,7 +321,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 p-3 flex items-start gap-2.5">
               <ShieldCheck className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
               <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                Default annual leave policy applies: <strong>18 Earned</strong> · <strong>12 Casual</strong> · <strong>8 Sick</strong> days. Onboarding assistify package will be attached.
+                Default annual leave policy applies: <strong>18 Earned</strong> · <strong>12 Casual</strong> · <strong>8 Sick</strong> days. The activation link will be delivered to their personal inbox.
               </div>
             </div>
 
@@ -301,7 +335,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
                 />
                 <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">
-                  Dispatch email invitation immediately
+                  Dispatch email invitation to personal inbox
                 </span>
               </label>
 

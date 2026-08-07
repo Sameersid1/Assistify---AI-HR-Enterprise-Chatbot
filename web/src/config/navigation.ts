@@ -34,10 +34,10 @@ export interface NavGroup {
 }
 
 /**
- * super_admin is omitted on purpose — it is a platform-level role (company
- * provisioning) that is still a SHOULD-HAVE and not built. It falls back to the
- * admin menu in the lookup below, so we type this Partial rather than invent an
- * empty entry. (Re-applied after each frontend regeneration.)
+ * super_admin is omitted on purpose — a platform-level role that is still a
+ * SHOULD-HAVE and not built. It falls back to the admin menu in the lookup
+ * below, so this is Partial rather than an invented empty entry.
+ * (Re-applied after each frontend regeneration.)
  */
 export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
   employee: [

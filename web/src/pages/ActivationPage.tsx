@@ -32,11 +32,13 @@ export const ActivationPage: React.FC = () => {
   // URL Params or sensible defaults
   const queryToken = searchParams.get("token") || "act_demo_7721"
   const queryEmail = searchParams.get("email") || "arjun.m@nexora.com"
+  const queryPersonalEmail = searchParams.get("personalEmail") || ""
   const queryRole = (searchParams.get("role") as UserRole) || "employee"
   const queryName = searchParams.get("name") || "Arjun Mehta"
 
   const [name, setName] = useState(queryName)
   const [email] = useState(queryEmail)
+  const [personalEmail] = useState(queryPersonalEmail)
   const [role, setRole] = useState<UserRole>(queryRole)
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -229,16 +231,30 @@ export const ActivationPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-700 dark:text-zinc-300">
-                    Work Email (Locked)
-                  </label>
-                  <Input
-                    readOnly
-                    disabled
-                    value={email}
-                    className="h-9 text-xs font-mono bg-zinc-100 dark:bg-zinc-800/80 text-zinc-500 cursor-not-allowed"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                      Work Email (Identity)
+                    </label>
+                    <Input
+                      readOnly
+                      disabled
+                      value={email}
+                      className="h-9 text-xs font-mono bg-zinc-100 dark:bg-zinc-800/80 text-zinc-500 cursor-not-allowed"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                      Invite Sent To
+                    </label>
+                    <Input
+                      readOnly
+                      disabled
+                      value={personalEmail || email}
+                      className="h-9 text-xs font-mono bg-zinc-100 dark:bg-zinc-800/80 text-zinc-500 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
               </div>
 
