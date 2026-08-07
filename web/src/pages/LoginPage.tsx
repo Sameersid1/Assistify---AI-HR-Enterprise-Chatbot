@@ -44,13 +44,21 @@ interface RolePortal {
   defaultEmail: string
 }
 
+/**
+ * Seeded demo accounts — MUST match server/src/scripts/seed.ts.
+ * Frontend regenerations keep reverting these to non-existent accounts, which
+ * produces a "Invalid email or password" that looks like a backend fault.
+ * If login breaks after a regen, check here first.
+ */
+const DEMO_PASSWORD = "Password123!"
+
 const ROLE_PORTALS: RolePortal[] = [
   {
     id: "employee",
     label: "Employee",
     icon: User,
     subtext: "Self-service queries, leave balances & requests",
-    defaultEmail: "arjun@nexora.com",
+    defaultEmail: "employee@nexora.com",
   },
   {
     id: "hr",
@@ -85,15 +93,16 @@ export const LoginPage: React.FC = () => {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "arjun@nexora.com",
-      password: "Test@123",
+      // Never ship prefilled credentials — DEV only.
+      email: import.meta.env.DEV ? "employee@nexora.com" : "",
+      password: import.meta.env.DEV ? DEMO_PASSWORD : "",
     },
   })
 
   const handleRoleSelect = (portal: RolePortal) => {
     setSelectedRole(portal.id)
     setValue("email", portal.defaultEmail)
-    setValue("password", "Test@123")
+    setValue("password", DEMO_PASSWORD)
     setErrorMessage(null)
   }
 
