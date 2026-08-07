@@ -1,5 +1,6 @@
 import { UserModel } from './user.model';
 import { CompanyModel } from '../companies/company.model';
+import { ensureBalances } from '../leave/leave.service';
 import { generateToken, INVITATION_TTL_MS } from '../../shared/tokens';
 import { env } from '../../config/env';
 import {
@@ -95,6 +96,10 @@ export async function inviteUser(
     invitationExpiresAt: token.expiresAt,
     invitedBy: auth.userId,
   });
+
+  // Copy the company's leave policy onto the new hire now, so their balance
+  // exists the moment they activate rather than being created on first read.
+  await ensureBalances(auth.companyId, user._id);
 
   return {
     user: toPublicUser(user),

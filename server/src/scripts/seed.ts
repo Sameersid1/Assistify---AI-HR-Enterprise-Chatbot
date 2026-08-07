@@ -12,17 +12,34 @@
 import { connectDb, disconnectDb } from '../config/db';
 import { CompanyModel } from '../modules/companies/company.model';
 import { UserModel } from '../modules/users/user.model';
+import { LeaveBalanceModel, LeaveRequestModel } from '../modules/leave/leave.model';
+import { ensureBalances } from '../modules/leave/leave.service';
 import { hashPassword } from '../modules/auth/auth.password';
+import { countWorkingDays } from '../shared/workdays';
 
 const DEMO_PASSWORD = 'Password123!';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A UTC-midnight date `offset` days from today — keeps seeded leave relative to the demo date. */
+function dayOffset(offset: number): Date {
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(today + offset * DAY_MS);
+}
 
 async function seed(): Promise<void> {
   await connectDb();
 
   // Idempotent: wipe the demo data so re-running is safe.
-  await Promise.all([UserModel.deleteMany({}), CompanyModel.deleteMany({})]);
+  await Promise.all([
+    UserModel.deleteMany({}),
+    CompanyModel.deleteMany({}),
+    LeaveBalanceModel.deleteMany({}),
+    LeaveRequestModel.deleteMany({}),
+  ]);
   // eslint-disable-next-line no-console
-  console.log('🧹 Cleared users + companies');
+  console.log('🧹 Cleared users + companies + leave');
 
   const nexora = await CompanyModel.create({
     name: 'Nexora Technologies',
@@ -49,7 +66,7 @@ async function seed(): Promise<void> {
     activatedAt: new Date('2023-01-10'),
   });
 
-  await UserModel.create({
+  const employee = await UserModel.create({
     companyId: nexora._id,
     email: 'employee@nexora.com',
     fullName: 'Arjun Mehta',
@@ -121,7 +138,7 @@ async function seed(): Promise<void> {
     activatedAt: new Date('2022-09-19'),
   });
 
-  await UserModel.create({
+  const vertexEmployee = await UserModel.create({
     companyId: vertex._id,
     email: 'employee@vertex.io',
     fullName: 'Rohan Iyer',
@@ -135,6 +152,88 @@ async function seed(): Promise<void> {
     passwordHash,
     activatedAt: new Date('2024-02-12'),
   });
+
+  // ── Leave balances ─────────────────────────────────────────────────────────
+  // Every seeded user gets this year's allowance copied from their company's
+  // policy — which is where Nexora's 18 and Vertex's 24 become visible.
+  const year = new Date().getUTCFullYear();
+  const allUsers = await UserModel.find({}).select('_id companyId');
+  for (const user of allUsers) {
+    await ensureBalances(user.companyId, user._id, year);
+  }
+  // eslint-disable-next-line no-console
+  console.log(`🌴 Leave balances provisioned for ${allUsers.length} users (${year})`);
+
+  // ── A little leave history ────────────────────────────────────────────────
+  // The HR queue must not be empty on demo day, and a balance of "18 of 18
+  // remaining" shows nothing. Both ranges span five calendar days so they always
+  // contain at least three working days, whatever weekday the seed is run on.
+  const takenFrom = dayOffset(-21);
+  const takenTo = dayOffset(-17);
+  const takenDays = countWorkingDays(takenFrom, takenTo);
+
+  await LeaveRequestModel.create({
+    companyId: nexora._id,
+    userId: employee._id,
+    type: 'annual',
+    fromDate: takenFrom,
+    toDate: takenTo,
+    days: takenDays,
+    reason: 'Family wedding',
+    status: 'APPROVED',
+    decidedBy: hr._id,
+    decidedAt: dayOffset(-24),
+    decisionNote: 'Approved — enjoy!',
+  });
+  await LeaveBalanceModel.updateOne(
+    { companyId: nexora._id, userId: employee._id, year, type: 'annual' },
+    { $inc: { used: takenDays } },
+  );
+
+  const pendingFrom = dayOffset(7);
+  const pendingTo = dayOffset(11);
+  const pendingDays = countWorkingDays(pendingFrom, pendingTo);
+
+  await LeaveRequestModel.create({
+    companyId: nexora._id,
+    userId: employee._id,
+    type: 'casual',
+    fromDate: pendingFrom,
+    toDate: pendingTo,
+    days: pendingDays,
+    reason: 'Moving apartments',
+    status: 'PENDING',
+  });
+  await LeaveBalanceModel.updateOne(
+    { companyId: nexora._id, userId: employee._id, year, type: 'casual' },
+    { $inc: { pending: pendingDays } },
+  );
+
+  // Vertex gets its own pending request, so "HR sees only their own tenant's
+  // queue" is a claim the permission matrix can actually falsify.
+  const vertexFrom = dayOffset(14);
+  const vertexTo = dayOffset(18);
+  const vertexDays = countWorkingDays(vertexFrom, vertexTo);
+
+  await LeaveRequestModel.create({
+    companyId: vertex._id,
+    userId: vertexEmployee._id,
+    type: 'annual',
+    fromDate: vertexFrom,
+    toDate: vertexTo,
+    days: vertexDays,
+    reason: 'Design conference',
+    status: 'PENDING',
+  });
+  await LeaveBalanceModel.updateOne(
+    { companyId: vertex._id, userId: vertexEmployee._id, year, type: 'annual' },
+    { $inc: { pending: vertexDays } },
+  );
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `📋 Leave: Arjun has ${takenDays} annual used + ${pendingDays} casual pending; Vertex has 1 pending`,
+  );
 
   // eslint-disable-next-line no-console
   console.log('\n✅ Seed complete. Demo logins (password for all):', DEMO_PASSWORD);
