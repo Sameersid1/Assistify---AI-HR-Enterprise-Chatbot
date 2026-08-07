@@ -6,6 +6,7 @@ import { errorHandler, notFoundHandler } from './middleware/error';
 import healthRoutes from './modules/health/health.routes';
 import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/users/user.routes';
+import leaveRoutes from './modules/leave/leave.routes';
 
 export function createApp() {
   const app = express();
@@ -18,6 +19,7 @@ export function createApp() {
   app.use('/api/v1/health', healthRoutes);
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/leave', leaveRoutes);
 
   // 404 + error handler must be last
   app.use(notFoundHandler);

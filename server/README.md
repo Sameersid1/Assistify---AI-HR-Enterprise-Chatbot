@@ -49,6 +49,36 @@ All under `/api/v1`. Response envelope: `{ success, data }` or `{ success, error
 | GET | `/health` | — | Liveness + DB state |
 | POST | `/auth/login` | — | email + password → user + access/refresh tokens |
 | GET | `/auth/me` | Bearer | Current user from token |
+| GET | `/leave/my-balance` | Bearer | Own balances for this year — takes no parameter |
+| GET | `/leave/my-requests` | Bearer | Own requests (`?status=`, `?type=`) |
+| POST | `/leave/requests` | Bearer | Apply — `{ type, fromDate, toDate, reason }` |
+| POST | `/leave/requests/:id/cancel` | Bearer (owner) | Withdraw a pending request |
+| GET | `/leave/requests` | hr/admin | Approval queue for the tenant |
+| POST | `/leave/requests/:id/approve` | hr/admin | Approve — `{ note? }` |
+| POST | `/leave/requests/:id/reject` | hr/admin | Reject — `{ note }` (required) |
+
+### Leave — how the balance works
+
+`available = allocated − used − pending`. Applying **reserves** days as `pending`;
+approving moves them to `used`; rejecting or cancelling gives them back. That
+reservation is what stops an employee with 2 days left from getting three
+separate 2-day requests approved.
+
+```
+PENDING ──approve──▶ APPROVED     pending → used
+   │    ├──reject───▶ REJECTED    pending released
+   │    └──cancel───▶ CANCELLED   pending released (owner only)
+   └─ any other transition is 409 LEAVE_NOT_PENDING
+```
+
+Days are **counted server-side** in working days (Mon–Fri), never taken from the
+request body. Allocations come from `company.leavePolicy`, so Nexora gets 18
+annual days and Vertex 24. Error codes: `LEAVE_OVERLAP` ·
+`LEAVE_INSUFFICIENT_BALANCE` · `LEAVE_PAST_DATE` · `LEAVE_NO_WORKING_DAYS` ·
+`LEAVE_CROSS_YEAR` · `LEAVE_SELF_DECISION` · `LEAVE_NOT_OWNER` · `LEAVE_NOT_PENDING`.
+
+Public holidays are an M2 seam: `countWorkingDays()` already accepts an exclusion
+list, so the `holidays` collection plugs in without touching callers.
 
 ### Quick check
 
@@ -70,6 +100,7 @@ src/
 ├── modules/
 │   ├── auth/       login, JWT, password (argon2id)   ← 5-file pattern
 │   ├── users/      user model (invitation fields)
+│   ├── leave/      balances + requests, approval state machine
 │   ├── companies/  company model (leave policy)
 │   └── health/
 ├── scripts/seed.ts
