@@ -20,12 +20,14 @@ import {
   Lock,
   Headphones,
   Sliders,
+  Send,
 } from "lucide-react"
 
 export interface StaffInviteData {
   id: string
   name: string
   email: string
+  personalEmail?: string
   role: "hr" | "it_support" | "admin"
   permissions: string[]
   expiresIn: string
@@ -45,6 +47,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
   const [formData, setFormData] = useState({
     name: "",
     email: "",
+    personalEmail: "",
     role: "hr" as "hr" | "it_support" | "admin",
     expiry: "72h",
   })
@@ -102,6 +105,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
       id: `inv-${Date.now().toString().slice(-4)}`,
       name: formData.name || formData.email.split("@")[0],
       email: formData.email,
+      personalEmail: formData.personalEmail || formData.email,
       role: formData.role,
       permissions: activePermissions,
       expiresIn: formData.expiry,
@@ -109,9 +113,10 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
 
     onInviteStaff(newStaff)
 
-    // Generate mock activation token
+    // Generate mock activation token with work and personal email
     const token = `adm_${Math.random().toString(36).substring(2, 10)}`
-    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&role=${formData.role}&name=${encodeURIComponent(formData.name || "")}`
+    const sendToEmail = formData.personalEmail || formData.email
+    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&personalEmail=${encodeURIComponent(sendToEmail)}&role=${formData.role}&name=${encodeURIComponent(formData.name || "")}`
     setCreatedInviteLink(activationUrl)
   }
 
@@ -128,6 +133,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
     setFormData({
       name: "",
       email: "",
+      personalEmail: "",
       role: "hr",
       expiry: "72h",
     })
@@ -145,10 +151,10 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
             </div>
             <div>
               <DialogTitle className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                Invite Staff & System Roles
+                Invite HR / Staff Member
               </DialogTitle>
               <DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Grant elevated access for HR Managers, IT Specialists, or Administrators
+                Grant elevated access and email activation invite to their personal inbox
               </DialogDescription>
             </div>
           </div>
@@ -161,13 +167,18 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
               <CheckCircle2 className="h-8 w-8" />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
                 Staff Invitation Dispatched!
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-                Invitation sent to <strong>{formData.email}</strong> as{" "}
-                <strong className="uppercase">{formData.role.replace("_", " ")}</strong>.
+                Activation invitation dispatched to personal inbox:{" "}
+                <strong className="text-amber-600 dark:text-amber-400 font-semibold">
+                  {formData.personalEmail || formData.email}
+                </strong>
+                <span className="block text-[11px] text-zinc-400 mt-0.5">
+                  (Assigned Role: <strong className="uppercase">{formData.role.replace("_", " ")}</strong> · Corporate: {formData.email})
+                </span>
               </p>
             </div>
 
@@ -203,23 +214,24 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-            {/* Name & Email */}
-            <div className="grid grid-cols-2 gap-3.5">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300">
-                  Full Name
-                </label>
-                <Input
-                  placeholder="e.g. Priya Sharma"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
+            {/* Full Name */}
+            <div className="space-y-1.5">
+              <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                Full Name
+              </label>
+              <Input
+                placeholder="e.g. Priya Sharma"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="h-9 text-xs"
+              />
+            </div>
 
+            {/* Work Email & Personal Email */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <label className="font-semibold text-zinc-700 dark:text-zinc-300">
-                  Work Email <span className="text-rose-500">*</span>
+                  Work Email (Corporate) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
@@ -229,6 +241,23 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                     placeholder="priya.hr@nexora.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="h-9 pl-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                  <span>Personal Email (For Invite)</span>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal">Sends link here</span>
+                </label>
+                <div className="relative">
+                  <Send className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                  <Input
+                    type="email"
+                    placeholder="priya.personal@gmail.com"
+                    value={formData.personalEmail}
+                    onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })}
                     className="h-9 pl-9 text-xs"
                   />
                 </div>

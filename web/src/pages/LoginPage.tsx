@@ -46,8 +46,8 @@ interface RolePortal {
 
 /**
  * Seeded demo accounts — MUST match server/src/scripts/seed.ts.
- * Frontend regenerations keep reverting these to accounts that do not exist,
- * which produces "Invalid email or password" and looks like a backend fault.
+ * Regenerations keep reverting these to accounts that do not exist, which
+ * produces "Invalid email or password" and looks like a backend fault.
  * If login breaks after a regen, CHECK HERE FIRST.
  */
 const DEMO_PASSWORD = "Password123!"
