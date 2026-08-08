@@ -8,7 +8,10 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm ci && npm run build
+    # --include=dev is required: NODE_ENV=production makes npm skip
+    # devDependencies, and typescript + @types/node live there. Without it the
+    # build dies with "TS2688: Cannot find type definition file for 'node'".
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/v1/health
     envVars:
