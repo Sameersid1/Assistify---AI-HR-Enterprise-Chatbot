@@ -75,9 +75,14 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
+    // A fetch() rejection means the request never got a response: the API is
+    // down, or the browser blocked it on CORS. Name the URL we actually tried —
+    // hardcoding "port 5050" sends people debugging localhost while deployed.
     throw new ApiError(
       'NETWORK_ERROR',
-      'Could not reach the server. Is the API running on port 5050?',
+      import.meta.env.DEV
+        ? `Could not reach the API at ${BASE_URL}. Is the server running?`
+        : 'Could not reach the server. It may be starting up — try again in a moment.',
       0,
     )
   }
