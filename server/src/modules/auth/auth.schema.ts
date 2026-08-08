@@ -18,6 +18,14 @@ export const passwordRules = z
 export const activateSchema = z.object({
   token: z.string().min(1),
   password: passwordRules,
+  /** IANA zone from the activation form, e.g. "Asia/Kolkata". */
+  timezone: z.string().trim().max(64).optional(),
+  /**
+   * The activation form shows the name HR typed and lets the employee correct
+   * it — HR guesses spellings. The work email is NOT editable here: that is the
+   * login identity and changing it would let an invitee choose their own.
+   */
+  fullName: z.string().trim().min(1).max(120).optional(),
 });
 export type ActivateInput = z.infer<typeof activateSchema>;
 

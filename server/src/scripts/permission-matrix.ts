@@ -20,6 +20,9 @@ const BASE = `http://localhost:${env.PORT}/api/v1`;
 const PASSWORD = 'Password123!';
 /** Unique per run so the invite check is a real create, never a 409 replay. */
 const PROBE_EMAIL = `probe.${Date.now()}@nexora.com`;
+const PROBE_WORK_EMAIL = `probe.work.${Date.now()}@nexora.com`;
+const PROBE_PERSONAL_EMAIL = `probe.personal.${Date.now()}@gmail.com`;
+const PROBE_HR_EMAIL = `probe.hr.${Date.now()}@nexora.com`;
 
 /** Leave requests this run created — deleted again in cleanup so reruns are idempotent. */
 const createdRequestIds: string[] = [];
@@ -505,12 +508,76 @@ async function run(): Promise<void> {
     'LEAVE_NOT_PENDING',
   );
 
+  // ── 7. Invitation delivery + resend escalation ────────────────────────────
+  section('7. Invitation delivery');
+
+  const withPersonal = await call('POST', '/users/invite', {
+    token: nexoraHr.token,
+    body: {
+      email: PROBE_WORK_EMAIL,
+      personalEmail: PROBE_PERSONAL_EMAIL,
+      fullName: 'Probe Personal',
+      role: 'employee',
+    },
+  });
+  check(
+    'the invitation is emailed to the PERSONAL address, not the work one',
+    withPersonal.body?.data?.invitationSentTo === PROBE_PERSONAL_EMAIL,
+    `sent to ${withPersonal.body?.data?.invitationSentTo}`,
+  );
+  check(
+    'the work email stays the login identity',
+    withPersonal.body?.data?.user?.email === PROBE_WORK_EMAIL,
+    `identity is ${withPersonal.body?.data?.user?.email}`,
+  );
+
+  const rawToken = new URL(withPersonal.body?.data?.activationUrl ?? 'http://x/').searchParams.get(
+    'token',
+  );
+  const invitationInfo = await call('GET', `/auth/invitation/${rawToken}`);
+  check(
+    'the activation page can read company name and destination inbox',
+    invitationInfo.body?.data?.companyName === 'Nexora Technologies' &&
+      invitationInfo.body.data.invitationSentTo === PROBE_PERSONAL_EMAIL,
+    `got ${JSON.stringify(invitationInfo.body?.data)}`,
+  );
+
+  /**
+   * The escalation this closes: admin invites an HR who has not activated, HR
+   * calls resend on them, and the response hands HR a live activation link for
+   * an account outranking their own. D22 has to gate resend, not just invite.
+   */
+  const pendingHr = await call('POST', '/users/invite', {
+    token: nexoraAdmin.token,
+    body: { email: PROBE_HR_EMAIL, fullName: 'Probe Pending HR', role: 'hr' },
+  });
+  check(
+    'admin CAN invite an hr (whitelist allows it)',
+    pendingHr.status === 201,
+    `got ${pendingHr.status} / ${JSON.stringify(pendingHr.body?.error)}`,
+  );
+  expectStatus(
+    'HR cannot resend an invitation to a pending HR → 403 (no escalation via resend)',
+    await call('POST', `/users/${pendingHr.body?.data?.user?.id}/resend-invitation`, {
+      token: nexoraHr.token,
+    }),
+    403,
+    'ROLE_NOT_ALLOWED',
+  );
+  expectStatus(
+    'a malformed user id on resend → 404, never a 500 CastError',
+    await call('POST', '/users/not-an-object-id/resend-invitation', { token: nexoraHr.token }),
+    404,
+  );
+
   // ── cleanup ────────────────────────────────────────────────────────────────
   // Delete this run's leave requests, then rebuild the affected balances from
   // the requests that remain. Without this, every run would permanently consume
   // days from the seeded users and the matrix would eventually fail on itself.
   await connectDb();
-  await UserModel.deleteOne({ email: PROBE_EMAIL });
+  await UserModel.deleteMany({
+    email: { $in: [PROBE_EMAIL, PROBE_WORK_EMAIL, PROBE_HR_EMAIL] },
+  });
   await LeaveRequestModel.deleteMany({ _id: { $in: createdRequestIds } });
   await rebuildBalances([nexoraEmp.userId, nexoraHr.userId]);
   await disconnectDb();

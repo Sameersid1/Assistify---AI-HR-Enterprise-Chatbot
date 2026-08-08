@@ -34,6 +34,17 @@ const envSchema = z.object({
 
   ACCESS_TOKEN_TTL: z.string().trim().default('15m'),
   REFRESH_TOKEN_TTL: z.string().trim().default('7d'),
+
+  // ── Outbound email (invitations) ───────────────────────────────────────────
+  // All optional on purpose. With no SMTP configured the mailer falls back to
+  // Ethereal — a throwaway inbox that returns a preview URL — so a fresh clone
+  // can run the whole invite → activate flow without anyone's credentials.
+  // Set these four and the same code sends real mail; nothing else changes.
+  SMTP_HOST: z.string().trim().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().trim().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().trim().default('Assistify <no-reply@assistify.local>'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -20,8 +20,12 @@ import {
   Sparkles,
   ShieldCheck,
   Send,
-  UserCheck,
+  Loader2,
+  AlertCircle,
+  MailWarning,
 } from "lucide-react"
+import { api, ApiError } from "@/lib/api"
+import type { InviteRequest, InviteResponse } from "@/lib/types"
 
 export interface EmployeeData {
   name: string
@@ -57,44 +61,84 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     sendInvite: true,
   })
 
-  const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
+  const [result, setResult] = useState<InviteResponse | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /** The form's labels vs. what the API enum expects. */
+  const EMPLOYMENT_TYPES: Record<string, InviteRequest["employmentType"]> = {
+    "Full-time": "FULL_TIME",
+    "Part-time": "PART_TIME",
+    Contract: "CONTRACT",
+    Intern: "INTERN",
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.firstName || !formData.email) return
+    if (!formData.firstName || !formData.email || isSubmitting) return
 
     const fullName = `${formData.firstName} ${formData.lastName}`.trim()
-    const newEmp: EmployeeData = {
-      name: fullName,
-      email: formData.email,
-      personalEmail: formData.personalEmail || formData.email,
-      role: formData.designation || "Software Engineer",
-      dept: formData.department,
-      joined: new Date(formData.joiningDate).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-      status: formData.sendInvite ? "invited" : "active",
-      type: formData.employmentType,
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      // The server creates the user, allocates leave from the company policy,
+      // mints a single-use token and emails it. The link below is HR's fallback
+      // copy — it is not generated here.
+      const invite = await api.post<InviteResponse>("/users/invite", {
+        email: formData.email.trim(),
+        ...(formData.personalEmail.trim()
+          ? { personalEmail: formData.personalEmail.trim() }
+          : {}),
+        fullName,
+        role: "employee",
+        ...(formData.department ? { department: formData.department } : {}),
+        ...(formData.designation ? { designation: formData.designation } : {}),
+        employmentType: EMPLOYMENT_TYPES[formData.employmentType] ?? "FULL_TIME",
+        ...(formData.joiningDate ? { dateOfJoining: formData.joiningDate } : {}),
+      } satisfies InviteRequest)
+
+      setResult(invite)
+
+      // Keep the directory in step without waiting for a refetch.
+      onAddEmployee({
+        name: invite.user.fullName,
+        email: invite.user.email,
+        personalEmail: invite.invitationSentTo,
+        role: formData.designation || "Employee",
+        dept: formData.department,
+        joined: new Date(formData.joiningDate).toLocaleDateString("en-US", {
+          month: "short",
+          year: "numeric",
+        }),
+        status: "invited",
+        type: formData.employmentType,
+      })
+    } catch (err) {
+      setSubmitError(
+        err instanceof ApiError
+          ? err.code === "EMAIL_TAKEN"
+            ? "Someone already has that work email."
+            : err.message
+          : "Could not create the employee. Please try again.",
+      )
+    } finally {
+      setIsSubmitting(false)
     }
-
-    onAddEmployee(newEmp)
-
-    // Generate activation token and link with both work and personal email
-    const token = `act_${Math.random().toString(36).substring(2, 10)}`
-    const sendToEmail = formData.personalEmail || formData.email
-    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&personalEmail=${encodeURIComponent(sendToEmail)}&role=employee&name=${encodeURIComponent(fullName)}`
-    setCreatedInviteLink(activationUrl)
   }
 
   const handleCopy = () => {
-    if (createdInviteLink) {
-      navigator.clipboard.writeText(createdInviteLink)
+    if (result) {
+      navigator.clipboard.writeText(result.activationUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
   }
 
   const handleDone = () => {
-    setCreatedInviteLink(null)
+    setResult(null)
+    setSubmitError(null)
     setFormData({
       firstName: "",
       lastName: "",
@@ -130,28 +174,54 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        {createdInviteLink ? (
+        {result ? (
           <div className="p-6 space-y-5 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-8 w-8" />
+            <div
+              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
+                result.emailSent
+                  ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
+              }`}
+            >
+              {result.emailSent ? <CheckCircle2 className="h-8 w-8" /> : <MailWarning className="h-8 w-8" />}
             </div>
 
             <div className="space-y-1.5">
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Employee Registered & Activation Dispatched!
+                {result.emailSent
+                  ? "Employee created & invitation sent"
+                  : "Employee created — email could not be sent"}
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-                Activation invitation sent to personal inbox:{" "}
-                <strong className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                  {formData.personalEmail || formData.email}
-                </strong>
-                {formData.personalEmail && (
+                {result.emailSent ? (
+                  <>
+                    Activation link delivered to{" "}
+                    <strong className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                      {result.invitationSentTo}
+                    </strong>
+                  </>
+                ) : (
+                  <>The account exists — send them the link below yourself.</>
+                )}
+                {result.user.email !== result.invitationSentTo && (
                   <span className="block text-[11px] text-zinc-400 mt-0.5">
-                    (Corporate account: {formData.email})
+                    They'll sign in with: {result.user.email}
                   </span>
                 )}
               </p>
             </div>
+
+            {/* Dev only — the API returns this when mail goes to the Ethereal sandbox. */}
+            {result.emailPreviewUrl && (
+              <a
+                href={result.emailPreviewUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50 dark:bg-indigo-950/40 p-2.5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:underline"
+              >
+                Dev: open the email that was sent →
+              </a>
+            )}
 
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-3.5 text-left space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-400">
@@ -159,12 +229,14 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
                   Direct Activation Link
                 </span>
-                <Badge variant="active" className="text-[10px] py-0 px-2 font-mono">Expires in 7 days</Badge>
+                <Badge variant="active" className="text-[10px] py-0 px-2 font-mono">
+                  Single use · 72 hours
+                </Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
-                  value={createdInviteLink}
+                  value={result.activationUrl}
                   className="h-8 text-xs font-mono bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 select-all"
                 />
                 <Button
@@ -321,9 +393,17 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 p-3 flex items-start gap-2.5">
               <ShieldCheck className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
               <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                Default annual leave policy applies: <strong>18 Earned</strong> · <strong>12 Casual</strong> · <strong>8 Sick</strong> days. The activation link will be delivered to their personal inbox.
+                Your company's annual leave policy is allocated automatically. The single-use
+                activation link is emailed to their personal inbox and expires in 72 hours.
               </div>
             </div>
+
+            {submitError && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-2.5 text-[11px] text-rose-700 dark:text-rose-300">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                <span>{submitError}</span>
+              </div>
+            )}
 
             {/* Modal Actions */}
             <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
@@ -340,11 +420,17 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               </label>
 
               <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={onClose} className="text-xs h-8">
+                <Button type="button" variant="outline" size="sm" onClick={onClose} className="text-xs h-8" disabled={isSubmitting}>
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-8 px-4 shadow-xs">
-                  Create & Send Invite
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSubmitting}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-semibold h-8 px-4 shadow-xs gap-1.5"
+                >
+                  {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isSubmitting ? "Creating…" : "Create & Send Invite"}
                 </Button>
               </div>
             </div>

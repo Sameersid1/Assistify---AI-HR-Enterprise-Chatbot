@@ -1,5 +1,6 @@
 import type { Types } from 'mongoose';
 import { UserModel } from '../users/user.model';
+import { CompanyModel } from '../companies/company.model';
 import { toPublicUser, type PublicUser } from '../users/user.service';
 import { hashPassword, verifyPassword } from './auth.password';
 import {
@@ -84,9 +85,13 @@ export async function issueTokens(
  * GET /auth/invitation/:token — validate before showing the activation form.
  * Returns just enough to prefill the form; never the token itself.
  */
-export async function validateInvitation(
-  rawToken: string,
-): Promise<{ email: string; fullName: string; role: string }> {
+export async function validateInvitation(rawToken: string): Promise<{
+  email: string;
+  fullName: string;
+  role: string;
+  companyName: string;
+  invitationSentTo: string;
+}> {
   const user = await UserModel.findOne({ invitationTokenHash: hashRawToken(rawToken) });
   if (
     !user ||
@@ -96,7 +101,17 @@ export async function validateInvitation(
   ) {
     throw new ValidationError('Invalid or expired invitation', 'INVITATION_INVALID');
   }
-  return { email: user.email, fullName: user.fullName, role: user.role };
+
+  const company = await CompanyModel.findById(user.companyId).select('name');
+
+  return {
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    companyName: company?.name ?? '',
+    // Shown as "Invite sent to" so the employee can see which inbox it reached.
+    invitationSentTo: user.personalEmail || user.email,
+  };
 }
 
 /**
@@ -120,6 +135,8 @@ export async function activate(
   }
 
   user.passwordHash = await hashPassword(input.password);
+  if (input.timezone) user.timezone = input.timezone;
+  if (input.fullName) user.fullName = input.fullName;
   user.status = 'ACTIVE';
   user.invitationTokenHash = null; // burn it — single use
   user.invitationExpiresAt = null;

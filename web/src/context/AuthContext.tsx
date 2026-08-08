@@ -10,6 +10,12 @@ interface AuthContextType {
   /** True while we restore the session on first load — guards render a spinner until false. */
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  /**
+   * Adopt a session the server already issued — used by activation, which
+   * returns tokens directly so the new employee lands in the app without
+   * retyping the password they just chose.
+   */
+  adoptSession: (data: LoginResponse) => void
   logout: () => Promise<void>
 }
 
@@ -57,9 +63,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(toUser(data.user))
         return { success: true }
       } catch (err) {
+        // The server only distinguishes these two AFTER verifying the password,
+        // so passing them through is not an enumeration oracle — and an invited
+        // user told "invalid password" will retry forever instead of going to
+        // look for their activation email.
+        const PASS_THROUGH = ["NETWORK_ERROR", "AUTH_NOT_ACTIVATED", "AUTH_DEACTIVATED"]
         const message =
           err instanceof ApiError
-            ? err.code === "NETWORK_ERROR"
+            ? PASS_THROUGH.includes(err.code)
               ? err.message
               : // Never reveal which field was wrong — user-enumeration guard.
                 "Invalid email or password"
@@ -69,6 +80,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     [],
   )
+
+  const adoptSession = useCallback((data: LoginResponse) => {
+    tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
+    setUser(toUser(data.user))
+  }, [])
 
   const logout = useCallback(async () => {
     try {
@@ -81,7 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, isAuthenticated: !!user, isLoading, login, adoptSession, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

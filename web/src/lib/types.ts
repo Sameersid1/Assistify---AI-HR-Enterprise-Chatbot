@@ -61,10 +61,43 @@ export interface MeResponse {
   user: ApiUser
 }
 
+/** GET /auth/invitation/:token — what the activation page renders before signup. */
 export interface InvitationInfo {
+  /** Work email. This is the login identity and cannot be edited. */
   email: string
   fullName: string
   role: UserRole
+  companyName: string
+  /** The inbox the link was delivered to — personal address when one was given. */
+  invitationSentTo: string
+}
+
+/** POST /auth/activate — activation logs you straight in. */
+export interface ActivateResponse extends AuthTokens {
+  user: ApiUser
+}
+
+/** POST /users/invite — body. companyId is never sent; the server reads the JWT. */
+export interface InviteRequest {
+  email: string
+  personalEmail?: string
+  fullName: string
+  role: UserRole
+  department?: string
+  designation?: string
+  employmentType?: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERN'
+  dateOfJoining?: string
+}
+
+export interface InviteResponse {
+  user: ApiUser
+  /** Raw link, returned once. Shown as "copy link" so HR has a fallback. */
+  activationUrl: string
+  invitationSentTo: string
+  /** False when the mail server rejected it — the link above still works. */
+  emailSent: boolean
+  /** Dev only: Ethereal sandbox URL where the sent email can be read. */
+  emailPreviewUrl?: string
 }
 
 /** The success/error envelope every endpoint uses. */

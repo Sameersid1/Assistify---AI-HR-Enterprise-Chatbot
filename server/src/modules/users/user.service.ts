@@ -2,7 +2,10 @@ import { UserModel } from './user.model';
 import { CompanyModel } from '../companies/company.model';
 import { ensureBalances } from '../leave/leave.service';
 import { generateToken, INVITATION_TTL_MS } from '../../shared/tokens';
-import { env } from '../../config/env';
+import { sendMail } from '../../shared/mailer';
+import { toObjectId } from '../../shared/objectId';
+import { buildInvitationEmail } from './user.email';
+import { env, isProd } from '../../config/env';
 import {
   ConflictError,
   ForbiddenError,
@@ -14,6 +17,7 @@ import type { InviteInput } from './user.schema';
 export interface PublicUser {
   id: string;
   email: string;
+  personalEmail?: string | null;
   fullName: string;
   role: string;
   status: string;
@@ -28,6 +32,7 @@ export function toPublicUser(user: any): PublicUser {
   return {
     id: user._id.toString(),
     email: user.email,
+    personalEmail: user.personalEmail ?? null,
     fullName: user.fullName,
     role: user.role,
     status: user.status,
@@ -57,6 +62,48 @@ export interface InviteResult {
   user: PublicUser;
   /** Raw activation token — shown once in the HR UI ("Copy link"). Never stored raw. */
   activationUrl: string;
+  /** The address the invitation was emailed to (personal if given, else work). */
+  invitationSentTo: string;
+  /** False when the mail server rejected it — HR can still copy the link. */
+  emailSent: boolean;
+  /** Ethereal sandbox only, and never in production. */
+  emailPreviewUrl?: string;
+}
+
+/**
+ * Create the activation link, email it, and report what happened.
+ *
+ * Delivery failure is not invitation failure. The user record and the token are
+ * already committed; if SMTP is down, HR still gets `activationUrl` back and can
+ * send it by hand. Throwing here would leave an INVITED user nobody can reach.
+ */
+async function deliverInvitation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user: any,
+  rawToken: string,
+): Promise<Omit<InviteResult, 'user'>> {
+  const activationUrl = `${env.CLIENT_URL}/activate?token=${rawToken}`;
+  const recipient: string = user.personalEmail || user.email;
+
+  const company = await CompanyModel.findById(user.companyId).select('name');
+
+  const mail = buildInvitationEmail({
+    fullName: user.fullName,
+    companyName: company?.name ?? 'your company',
+    workEmail: user.email,
+    role: user.role,
+    activationUrl,
+    expiresInHours: Math.round(INVITATION_TTL_MS / 3_600_000),
+  });
+
+  const result = await sendMail({ ...mail, to: recipient });
+
+  return {
+    activationUrl,
+    invitationSentTo: recipient,
+    emailSent: result.sent,
+    ...(result.previewUrl && !isProd ? { emailPreviewUrl: result.previewUrl } : {}),
+  };
 }
 
 export async function inviteUser(
@@ -83,12 +130,14 @@ export async function inviteUser(
     // ⚠️ companyId comes from the inviter's JWT — NEVER from the request body.
     companyId: auth.companyId,
     email,
+    personalEmail: input.personalEmail?.toLowerCase().trim() ?? null,
     fullName: input.fullName,
     role: input.role,
     status: 'INVITED',
     employeeId: input.employeeId,
     department: input.department,
     designation: input.designation,
+    employmentType: input.employmentType ?? 'FULL_TIME',
     dateOfJoining: input.dateOfJoining ? new Date(input.dateOfJoining) : undefined,
     reportingManagerId: input.reportingManagerId ?? null,
     passwordHash: null,
@@ -101,10 +150,7 @@ export async function inviteUser(
   // exists the moment they activate rather than being created on first read.
   await ensureBalances(auth.companyId, user._id);
 
-  return {
-    user: toPublicUser(user),
-    activationUrl: `${env.CLIENT_URL}/activate?token=${token.raw}`,
-  };
+  return { user: toPublicUser(user), ...(await deliverInvitation(user, token.raw)) };
 }
 
 /** Regenerate the invitation token for a still-INVITED user. */
@@ -112,10 +158,26 @@ export async function resendInvitation(
   auth: AuthContext,
   targetId: string,
 ): Promise<InviteResult> {
-  const user = await UserModel.findOne({ _id: targetId, companyId: auth.companyId });
+  const user = await UserModel.findOne({
+    _id: toObjectId(targetId, 'User'),
+    companyId: auth.companyId,
+  });
   if (!user) throw new NotFoundError('User not found');
   if (user.status !== 'INVITED') {
     throw new ConflictError('User is already active or deactivated', 'NOT_INVITED');
+  }
+
+  // D22 applies here too. Without this check, resend is a privilege-escalation
+  // route: HR calls it on a not-yet-activated admin, receives a fresh activation
+  // link in the response, and sets that admin's password themselves. The
+  // whitelist has to gate who you may *hand an account to*, not just who you may
+  // create — and this endpoint hands out an account.
+  const allowed = ROLE_CREATE_WHITELIST[auth.role] ?? [];
+  if (!allowed.includes(user.role as Role)) {
+    throw new ForbiddenError(
+      `Your role (${auth.role}) cannot resend an invitation to a "${user.role}"`,
+      'ROLE_NOT_ALLOWED',
+    );
   }
 
   const token = generateToken(INVITATION_TTL_MS);
@@ -123,10 +185,7 @@ export async function resendInvitation(
   user.invitationExpiresAt = token.expiresAt;
   await user.save();
 
-  return {
-    user: toPublicUser(user),
-    activationUrl: `${env.CLIENT_URL}/activate?token=${token.raw}`,
-  };
+  return { user: toPublicUser(user), ...(await deliverInvitation(user, token.raw)) };
 }
 
 /** Deactivate (never delete). Kills all sessions by clearing refresh hashes. */
@@ -137,7 +196,10 @@ export async function deactivateUser(
   if (auth.userId.equals(targetId)) {
     throw new ForbiddenError('You cannot deactivate your own account', 'SELF_DEACTIVATE');
   }
-  const user = await UserModel.findOne({ _id: targetId, companyId: auth.companyId });
+  const user = await UserModel.findOne({
+    _id: toObjectId(targetId, 'User'),
+    companyId: auth.companyId,
+  });
   if (!user) throw new NotFoundError('User not found');
 
   user.status = 'DEACTIVATED';
@@ -150,7 +212,10 @@ export async function reactivateUser(
   auth: AuthContext,
   targetId: string,
 ): Promise<PublicUser> {
-  const user = await UserModel.findOne({ _id: targetId, companyId: auth.companyId });
+  const user = await UserModel.findOne({
+    _id: toObjectId(targetId, 'User'),
+    companyId: auth.companyId,
+  });
   if (!user) throw new NotFoundError('User not found');
   if (!user.passwordHash) {
     throw new ConflictError('User never activated — resend the invitation instead', 'NEVER_ACTIVATED');
