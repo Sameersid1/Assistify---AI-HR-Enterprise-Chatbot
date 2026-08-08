@@ -9,6 +9,7 @@
  *
  * Run:  npm run seed
  */
+import { env } from '../config/env';
 import { connectDb, disconnectDb } from '../config/db';
 import { CompanyModel } from '../modules/companies/company.model';
 import { UserModel } from '../modules/users/user.model';
@@ -28,7 +29,42 @@ function dayOffset(offset: number): Date {
   return new Date(today + offset * DAY_MS);
 }
 
+/**
+ * Refuse to wipe a database that is not on this machine.
+ *
+ * This script starts with deleteMany({}) on users, companies and leave. That is
+ * exactly what you want locally and a disaster against Atlas: the usual way to
+ * lose production data is to point MONGO_URI at the cloud to seed it once, and
+ * then forget to change it back.
+ *
+ * Deliberately seeding a remote database is still possible, but it now has to be
+ * a decision rather than an accident:
+ *
+ *   SEED_ALLOW_REMOTE=yes npm run seed        (bash)
+ *   $env:SEED_ALLOW_REMOTE="yes"; npm run seed  (PowerShell)
+ */
+function assertSafeTarget(): void {
+  const uri = env.MONGO_URI;
+  const isLocal = /(?:127\.0\.0\.1|localhost|\[::1\]|host\.docker\.internal)/.test(uri);
+  if (isLocal || process.env.SEED_ALLOW_REMOTE === 'yes') return;
+
+  const host = uri.replace(/^mongodb(\+srv)?:\/\/[^@]*@/, '').split(/[/?]/)[0];
+  /* eslint-disable no-console */
+  console.error('\n⛔  Refusing to seed a remote database.\n');
+  console.error(`    Target : ${host}`);
+  console.error('    This script DELETES every user, company and leave record');
+  console.error('    before recreating the demo data.\n');
+  console.error('    If your laptop should be using its own database, check');
+  console.error('    MONGO_URI in server/.env — it should point at 127.0.0.1.\n');
+  console.error('    If you really do mean to reset the remote database:');
+  console.error('      PowerShell : $env:SEED_ALLOW_REMOTE="yes"; npm run seed');
+  console.error('      bash       : SEED_ALLOW_REMOTE=yes npm run seed\n');
+  /* eslint-enable no-console */
+  process.exit(1);
+}
+
 async function seed(): Promise<void> {
+  assertSafeTarget();
   await connectDb();
 
   // Idempotent: wipe the demo data so re-running is safe.
