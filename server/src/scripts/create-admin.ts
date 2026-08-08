@@ -40,6 +40,11 @@ const INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 
 interface Args {
   company?: string;
+  newCompany?: string;
+  domain?: string;
+  annual?: number;
+  casual?: number;
+  sick?: number;
   name?: string;
   email?: string;
   yes: boolean;
@@ -51,11 +56,18 @@ function parseArgs(argv: string[]): Args {
     const flag = argv[i];
     if (flag === '--yes' || flag === '-y') args.yes = true;
     else if (flag === '--company') args.company = argv[++i];
+    else if (flag === '--new-company') args.newCompany = argv[++i];
+    else if (flag === '--domain') args.domain = argv[++i];
+    else if (flag === '--annual') args.annual = Number(argv[++i]);
+    else if (flag === '--casual') args.casual = Number(argv[++i]);
+    else if (flag === '--sick') args.sick = Number(argv[++i]);
     else if (flag === '--name') args.name = argv[++i];
     else if (flag === '--email') args.email = argv[++i];
   }
   return args;
 }
+
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -81,35 +93,88 @@ async function main(): Promise<void> {
   await connectDb();
 
   // ── Company ───────────────────────────────────────────────────────────────
-  const companies = await CompanyModel.find({}).sort({ name: 1 });
-  if (companies.length === 0) {
-    console.error('  No companies exist yet. Run `npm run seed` first, or create one in Atlas.');
+  const bail = async (msg: string): Promise<never> => {
+    console.error(`  ${msg}`);
     await disconnectDb();
     rl.close();
     process.exit(1);
-  }
+  };
+
+  const companies = await CompanyModel.find({}).sort({ name: 1 });
+
+  /**
+   * Create a tenant. Onboarding a new customer must never require seed.ts —
+   * that wipes every company. This only ever inserts.
+   */
+  const createCompany = async (): Promise<NonNullable<typeof company>> => {
+    console.log('\n  New company');
+
+    const cname = (await ask('    Name           : ', args.newCompany)).trim();
+    if (!cname) await bail('A company name is required.');
+    if (companies.some((c) => c.name.toLowerCase() === cname.toLowerCase())) {
+      await bail(`"${cname}" already exists. Pick it from the list instead.`);
+    }
+
+    const domain = (await ask('    Email domain   : ', args.domain)).trim().toLowerCase();
+    if (!DOMAIN_RE.test(domain)) await bail(`"${domain}" is not a valid domain (e.g. acme.com).`);
+
+    // Each tenant sets its own allowances — this is what makes one company show
+    // 18 annual days and another 24. Copied onto every user they invite.
+    const days = async (label: string, fallback: number, preset?: number): Promise<number> => {
+      if (preset !== undefined && Number.isFinite(preset)) return preset;
+      const raw = (await ask(`    ${label} [${fallback}] : `)).trim();
+      if (!raw) return fallback;
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 0 || n > 365) await bail(`"${raw}" is not a valid number of days.`);
+      return n;
+    };
+
+    const annual = await days('Annual leave  ', 18, args.annual);
+    const casual = await days('Casual leave  ', 8, args.casual);
+    const sick = await days('Sick leave    ', 8, args.sick);
+
+    const created = await CompanyModel.create({
+      name: cname,
+      domain,
+      leavePolicy: { annual, casual, sick },
+      status: 'ACTIVE',
+    });
+    console.log(`\n  ✅ Company created: ${created.name} (${annual}/${casual}/${sick} days)`);
+    return created;
+  };
 
   let company = args.company
     ? companies.find((c) => c.name.toLowerCase() === args.company!.toLowerCase())
     : undefined;
 
   if (!company && args.company) {
-    console.error(`  No company named "${args.company}". Available: ${companies.map((c) => c.name).join(', ')}`);
-    await disconnectDb();
-    rl.close();
-    process.exit(1);
+    const available = companies.length
+      ? companies.map((c) => c.name).join(', ')
+      : '(none yet — use --new-company to create one)';
+    await bail(`No company named "${args.company}". Available: ${available}`);
+  }
+
+  if (!company && args.newCompany) {
+    company = await createCompany();
   }
 
   if (!company) {
-    console.log('  Companies:');
-    companies.forEach((c, i) => console.log(`    ${i + 1}. ${c.name}`));
-    const pick = Number(await ask('\n  Which company? (number) '));
-    company = companies[pick - 1];
-    if (!company) {
-      console.error('  Not a valid choice.');
-      await disconnectDb();
-      rl.close();
-      process.exit(1);
+    if (companies.length === 0) {
+      console.log('  No companies yet — creating the first one.');
+      company = await createCompany();
+    } else {
+      console.log('  Companies:');
+      companies.forEach((c, i) => console.log(`    ${i + 1}. ${c.name}`));
+      const newIndex = companies.length + 1;
+      console.log(`    ${newIndex}. + Create a new company`);
+
+      const pick = Number(await ask('\n  Which one? (number) '));
+      if (pick === newIndex) {
+        company = await createCompany();
+      } else {
+        company = companies[pick - 1];
+        if (!company) await bail('Not a valid choice.');
+      }
     }
   }
 
