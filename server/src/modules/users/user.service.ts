@@ -68,6 +68,8 @@ export interface InviteResult {
   emailSent: boolean;
   /** Ethereal sandbox only, and never in production. */
   emailPreviewUrl?: string;
+  /** Present only when emailSent is false — the transport's own reason. */
+  emailError?: string;
 }
 
 /**
@@ -103,6 +105,11 @@ async function deliverInvitation(
     invitationSentTo: recipient,
     emailSent: result.sent,
     ...(result.previewUrl && !isProd ? { emailPreviewUrl: result.previewUrl } : {}),
+    // Why it failed, surfaced to the caller. Without this the UI can only say
+    // "could not be sent", and the reason is buried in server logs the person
+    // hitting the problem often cannot reach. These strings come from the mail
+    // transport ("Connection timeout", "Invalid login") and name no secrets.
+    ...(result.sent ? {} : { emailError: result.error ?? 'Unknown mail error' }),
   };
 }
 

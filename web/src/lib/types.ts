@@ -98,6 +98,8 @@ export interface InviteResponse {
   emailSent: boolean
   /** Dev only: Ethereal sandbox URL where the sent email can be read. */
   emailPreviewUrl?: string
+  /** Present only when emailSent is false — why the mail transport refused. */
+  emailError?: string
 }
 
 /** The success/error envelope every endpoint uses. */

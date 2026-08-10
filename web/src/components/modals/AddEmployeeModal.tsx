@@ -207,7 +207,14 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     </strong>
                   </>
                 ) : (
-                  <>The account exists — send them the link below yourself.</>
+                  <>
+                    The account exists — send them the link below yourself.
+                    {result.emailError && (
+                      <span className="mt-1.5 block font-mono text-[11px] text-amber-600 dark:text-amber-400">
+                        Mail server said: {result.emailError}
+                      </span>
+                    )}
+                  </>
                 )}
                 {result.user.email !== result.invitationSentTo && (
                   <span className="block text-[11px] text-zinc-400 mt-0.5">
