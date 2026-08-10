@@ -27,6 +27,26 @@ export interface MailResult {
 let transporter: Transporter | null = null;
 let usingEthereal = false;
 
+/** Give up quickly rather than hold an HTTP request open on a dead mail path. */
+const TIMEOUTS = {
+  connectionTimeout: 8000,
+  greetingTimeout: 8000,
+  socketTimeout: 12000,
+} as const;
+
+/** Reject after `ms` so a hung promise cannot hold the request open. */
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([promise, guard]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 async function getTransporter(): Promise<Transporter> {
   if (transporter) return transporter;
 
@@ -37,17 +57,30 @@ async function getTransporter(): Promise<Transporter> {
       // 465 is implicit TLS; 587 upgrades with STARTTLS.
       secure: (env.SMTP_PORT ?? 587) === 465,
       auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
+      // Without these, a host that silently drops SMTP traffic — as several
+      // PaaS providers do to deter spam — leaves the socket open until Node's
+      // default timeout. The invite request is awaiting this, so the caller
+      // sees a button stuck on "Creating…" for minutes. Fail in seconds
+      // instead: the user is already created and the copy-link fallback works.
+      ...TIMEOUTS,
     });
     return transporter;
   }
 
-  const testAccount = await nodemailer.createTestAccount();
+  // createTestAccount() is a network call. If it hangs, so does the invite —
+  // so bound it too, and let the caller fall back to the copy-link.
+  const testAccount = await withTimeout(
+    nodemailer.createTestAccount(),
+    8000,
+    'Ethereal account creation timed out',
+  );
   usingEthereal = true;
   transporter = nodemailer.createTransport({
     host: 'smtp.ethereal.email',
     port: 587,
     secure: false,
     auth: { user: testAccount.user, pass: testAccount.pass },
+    ...TIMEOUTS,
   });
   return transporter;
 }
@@ -62,7 +95,17 @@ export interface MailInput {
 export async function sendMail(input: MailInput): Promise<MailResult> {
   try {
     const tx = await getTransporter();
-    const info = await tx.sendMail({ from: env.MAIL_FROM, ...input });
+    // Belt and braces: the transport timeouts cover the socket, this covers the
+    // whole send. Either way the request returns in seconds, not minutes.
+    // 25s, not 15s: Gmail's first send on a cold transporter has been measured
+    // at 11.5s here — TLS handshake plus auth — and the transporter is cached
+    // afterwards, so later sends are much faster. The ceiling exists to bound
+    // the worst case, not to be hit in normal use.
+    const info = await withTimeout(
+      tx.sendMail({ from: env.MAIL_FROM, ...input }),
+      25000,
+      'Mail send timed out',
+    );
 
     const previewUrl = usingEthereal
       ? (nodemailer.getTestMessageUrl(info) as string | false) || undefined
