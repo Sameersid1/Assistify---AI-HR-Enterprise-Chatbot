@@ -11,11 +11,11 @@ interface AuthContextType {
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   /**
-   * Complete an invitation: set the password and start a session.
-   * The server returns the same { user, accessToken, refreshToken } as login,
-   * so the invitee lands signed in rather than being bounced to /login.
+   * Adopt a session the server already issued — used by activation, which
+   * returns tokens directly so the new employee lands in the app without
+   * retyping the password they just chose.
    */
-  activate: (token: string, password: string) => Promise<{ success: boolean; error?: string }>
+  adoptSession: (data: LoginResponse) => void
   logout: () => Promise<void>
 }
 
@@ -63,9 +63,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(toUser(data.user))
         return { success: true }
       } catch (err) {
+        // The server only distinguishes these two AFTER verifying the password,
+        // so passing them through is not an enumeration oracle — and an invited
+        // user told "invalid password" will retry forever instead of going to
+        // look for their activation email.
+        const PASS_THROUGH = ["NETWORK_ERROR", "AUTH_NOT_ACTIVATED", "AUTH_DEACTIVATED"]
         const message =
           err instanceof ApiError
-            ? err.code === "NETWORK_ERROR"
+            ? PASS_THROUGH.includes(err.code)
               ? err.message
               : // Never reveal which field was wrong — user-enumeration guard.
                 "Invalid email or password"
@@ -76,24 +81,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [],
   )
 
-  const activate = useCallback(
-    async (token: string, password: string): Promise<{ success: boolean; error?: string }> => {
-      try {
-        const data = await api.publicPost<LoginResponse>("/auth/activate", { token, password })
-        tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
-        setUser(toUser(data.user))
-        return { success: true }
-      } catch (err) {
-        // Unlike login, be specific here — the user is mid-setup and needs to
-        // know whether the link died or the password was rejected.
-        return {
-          success: false,
-          error: err instanceof ApiError ? err.message : "Could not activate this account.",
-        }
-      }
-    },
-    [],
-  )
+  const adoptSession = useCallback((data: LoginResponse) => {
+    tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
+    setUser(toUser(data.user))
+  }, [])
 
   const logout = useCallback(async () => {
     try {
@@ -106,7 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, activate, logout }}>
+    <AuthContext.Provider
+      value={{ user, isAuthenticated: !!user, isLoading, login, adoptSession, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

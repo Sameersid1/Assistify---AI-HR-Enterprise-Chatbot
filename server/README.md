@@ -49,6 +49,10 @@ All under `/api/v1`. Response envelope: `{ success, data }` or `{ success, error
 | GET | `/health` | — | Liveness + DB state |
 | POST | `/auth/login` | — | email + password → user + access/refresh tokens |
 | GET | `/auth/me` | Bearer | Current user from token |
+| POST | `/users/invite` | hr/admin | Create an INVITED user and email the activation link |
+| POST | `/users/:id/resend-invitation` | hr/admin | New token + new email (D22 applies to the target's role) |
+| GET | `/auth/invitation/:token` | — | Validate a link before showing the activation form |
+| POST | `/auth/activate` | — | `{ token, password, fullName?, timezone? }` → ACTIVE + logged in |
 | GET | `/leave/my-balance` | Bearer | Own balances for this year — takes no parameter |
 | GET | `/leave/my-requests` | Bearer | Own requests (`?status=`, `?type=`) |
 | POST | `/leave/requests` | Bearer | Apply — `{ type, fromDate, toDate, reason }` |
@@ -56,6 +60,45 @@ All under `/api/v1`. Response envelope: `{ success, data }` or `{ success, error
 | GET | `/leave/requests` | hr/admin | Approval queue for the tenant |
 | POST | `/leave/requests/:id/approve` | hr/admin | Approve — `{ note? }` |
 | POST | `/leave/requests/:id/reject` | hr/admin | Reject — `{ note }` (required) |
+
+### Invitations — how a new employee gets in
+
+There is no public sign-up. HR creates the account; the employee sets their own
+password through a single-use emailed link.
+
+```
+HR fills "Add Employee"        work email = login identity
+        │                      personal email = where the link goes
+        ▼
+POST /users/invite             creates INVITED user, allocates leave,
+        │                      mints a token (hashed in the DB, raw in the email)
+        ▼
+email → personal inbox         they have no work mailbox yet — that is the
+        │                      whole reason the personal address exists
+        ▼
+GET /auth/invitation/:token    validated BEFORE the form renders, so nobody
+        │                      picks a password against a dead link
+        ▼
+POST /auth/activate            password set, token burned, ACTIVE, auto-logged in
+        ▼
+from now on: log in with the WORK email
+```
+
+**Email works with no configuration.** With `SMTP_HOST` unset the server sends
+through Ethereal, a sandbox that delivers to nobody and prints a preview URL:
+
+```
+✉️  Invitation email (Ethereal, not delivered to a real inbox)
+    To      : arjun.personal@gmail.com
+    Preview : https://ethereal.email/message/aBc123...
+```
+
+To send real mail, fill in the SMTP block in `.env` (see `.env.example` — Gmail
+needs an **App Password**, not your account password). Nothing else changes.
+
+Delivery failure never fails the invitation: the user and token are already
+committed, so the response returns `emailSent: false` alongside a working
+`activationUrl` that HR can send by hand.
 
 ### Leave — how the balance works
 
