@@ -1,5 +1,5 @@
-import React, { useState } from "react"
-import { useNavigate, useSearchParams, Link } from "react-router-dom"
+import React, { useEffect, useState } from "react"
+import { useNavigate, useSearchParams, useParams, Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Sparkles,
@@ -19,27 +19,33 @@ import {
 } from "lucide-react"
 import { useAuth, type UserRole } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
+import { api, ApiError } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 
+/** Who the invitation is for — returned by GET /auth/invitation/:token. */
+interface InvitationInfo {
+  email: string
+  fullName: string
+  role: UserRole
+}
+
 export const ActivationPage: React.FC = () => {
   const [searchParams] = useSearchParams()
+  const { token: pathToken } = useParams<{ token?: string }>()
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { activate } = useAuth()
   const { theme, toggleTheme } = useTheme()
 
-  // URL Params or sensible defaults
-  const queryToken = searchParams.get("token") || "act_demo_7721"
-  const queryEmail = searchParams.get("email") || "arjun.m@nexora.com"
-  const queryPersonalEmail = searchParams.get("personalEmail") || ""
-  const queryRole = (searchParams.get("role") as UserRole) || "employee"
-  const queryName = searchParams.get("name") || "Arjun Mehta"
+  // The server issues links as /activate?token=<hex>. The /activate/:token form
+  // is supported as an alias so a pasted path variant still works.
+  const token = searchParams.get("token") ?? pathToken ?? ""
 
-  const [name, setName] = useState(queryName)
-  const [email] = useState(queryEmail)
-  const [personalEmail] = useState(queryPersonalEmail)
-  const [role, setRole] = useState<UserRole>(queryRole)
+  const [status, setStatus] = useState<"validating" | "valid" | "invalid">("validating")
+  const [invitation, setInvitation] = useState<InvitationInfo | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -47,32 +53,114 @@ export const ActivationPage: React.FC = () => {
   const [step, setStep] = useState<1 | 2>(1)
   const [isActivating, setIsActivating] = useState(false)
   const [activated, setActivated] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // Password criteria check
+  // Identity comes from the server, keyed by the token — never from the URL.
+  // Reading name/email/role out of query params would let anyone edit the link
+  // and activate as whoever they liked.
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      if (!token) {
+        if (!cancelled) {
+          setLoadError("This link is missing its invitation token.")
+          setStatus("invalid")
+        }
+        return
+      }
+      try {
+        const info = await api.publicGet<InvitationInfo>(
+          `/auth/invitation/${encodeURIComponent(token)}`,
+        )
+        if (!cancelled) {
+          setInvitation(info)
+          setStatus("valid")
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof ApiError && err.code !== "NETWORK_ERROR"
+              ? "This invitation has expired or has already been used."
+              : "Could not reach the server. Please try again in a moment.",
+          )
+          setStatus("invalid")
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  const name = invitation?.fullName ?? ""
+  const email = invitation?.email ?? ""
+  const role: UserRole = invitation?.role ?? "employee"
+
+  // Mirror the server's password rules — otherwise the form accepts a password
+  // the API then rejects, after the user has typed it twice.
   const hasMinLength = password.length >= 8
   const hasNumber = /\d/.test(password)
   const hasSpecial = /[@$!%*?&#]/.test(password)
   const isMatch = password === confirmPassword && password.length > 0
   const isPasswordValid = hasMinLength && hasNumber && isMatch
 
-  const handleActivate = (e: React.FormEvent) => {
+  const handleActivate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isPasswordValid) return
+    if (!isPasswordValid || isActivating) return
 
     setIsActivating(true)
-    setTimeout(() => {
-      setIsActivating(false)
+    setSubmitError(null)
+
+    const res = await activate(token, password)
+
+    setIsActivating(false)
+    if (res.success) {
       setActivated(true)
-      // Automatically login into the context
-      login(email, role)
-    }, 1200)
+      // activate() already stored the session, so go straight into the app.
+      setTimeout(() => navigate("/app"), 1500)
+    } else {
+      setSubmitError(res.error ?? "Could not activate this account.")
+    }
   }
 
-  const handleQuickDemoRole = (demoRole: UserRole, demoName: string, demoEmail: string) => {
-    setRole(demoRole)
-    setName(demoName)
+  // ── Checking the invitation ────────────────────────────────────────────────
+  if (status === "validating") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-zinc-300 border-t-indigo-600 dark:border-zinc-700 dark:border-t-indigo-400" />
+        <p className="text-sm text-zinc-500">Checking your invitation…</p>
+      </div>
+    )
   }
 
+  // ── Expired, already used, or malformed ───────────────────────────────────
+  if (status === "invalid") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-6 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+        <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/40">
+            <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h1 className="text-lg font-bold tracking-tight">Invitation unavailable</h1>
+          <p className="mt-2 text-sm text-zinc-500">{loadError}</p>
+          <p className="mt-4 text-xs text-zinc-400">
+            Invitation links are valid for 72 hours and can only be used once.
+            Ask your HR team to send a new one.
+          </p>
+          <Link to="/login" className="mt-6 inline-block">
+            <Button variant="outline" size="sm" className="text-xs font-semibold">
+              Back to sign in
+            </Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Valid invitation ──────────────────────────────────────────────────────
   return (
     <div className="relative min-h-screen flex flex-col justify-between bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100 selection:bg-indigo-500 selection:text-white">
       {/* Top Header */}
@@ -189,7 +277,7 @@ export const ActivationPage: React.FC = () => {
                   </span>
                 </div>
                 <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
-                  {queryToken}
+                  {token.slice(0, 12)}…
                 </span>
               </div>
 
@@ -203,9 +291,9 @@ export const ActivationPage: React.FC = () => {
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
                       <Input
-                        required
+                        readOnly
+                        disabled
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
                         className="h-9 pl-9 text-xs"
                       />
                     </div>
@@ -251,7 +339,7 @@ export const ActivationPage: React.FC = () => {
                     <Input
                       readOnly
                       disabled
-                      value={personalEmail || email}
+                      value={email}
                       className="h-9 text-xs font-mono bg-zinc-100 dark:bg-zinc-800/80 text-zinc-500 cursor-not-allowed"
                     />
                   </div>
@@ -318,6 +406,13 @@ export const ActivationPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Server-side failure — expired token, or a password the API rejected */}
+              {submitError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                  {submitError}
+                </div>
+              )}
+
               {/* Submit Button */}
               <div className="pt-3">
                 <Button
@@ -338,33 +433,10 @@ export const ActivationPage: React.FC = () => {
             </form>
           )}
 
-          {/* Quick Demo Switcher Footer */}
-          <div className="bg-zinc-50 dark:bg-zinc-950 px-6 py-3 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between text-[11px] text-zinc-500">
-            <span className="font-medium">Test Activation Preset:</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoRole("employee", "Arjun Mehta", "arjun@nexora.com")}
-                className={`px-2 py-0.5 rounded font-semibold ${role === "employee" ? "bg-indigo-600 text-white" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-              >
-                Employee
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoRole("hr", "Priya Sharma", "priya@nexora.com")}
-                className={`px-2 py-0.5 rounded font-semibold ${role === "hr" ? "bg-amber-500 text-white" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-              >
-                HR Manager
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoRole("admin", "Vikram Malhotra", "admin@nexora.com")}
-                className={`px-2 py-0.5 rounded font-semibold ${role === "admin" ? "bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-              >
-                Admin
-              </button>
-            </div>
-          </div>
+          {/* The "test activation preset" switcher was removed when this page was
+              wired to the API. It let the visitor choose their own role, which is
+              the same hole the TopBar role-switcher had: identity must come from
+              the server's invitation record, never from the client. */}
         </motion.div>
       </main>
 

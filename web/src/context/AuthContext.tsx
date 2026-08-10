@@ -10,6 +10,12 @@ interface AuthContextType {
   /** True while we restore the session on first load — guards render a spinner until false. */
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  /**
+   * Complete an invitation: set the password and start a session.
+   * The server returns the same { user, accessToken, refreshToken } as login,
+   * so the invitee lands signed in rather than being bounced to /login.
+   */
+  activate: (token: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
 }
 
@@ -70,6 +76,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [],
   )
 
+  const activate = useCallback(
+    async (token: string, password: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const data = await api.publicPost<LoginResponse>("/auth/activate", { token, password })
+        tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
+        setUser(toUser(data.user))
+        return { success: true }
+      } catch (err) {
+        // Unlike login, be specific here — the user is mid-setup and needs to
+        // know whether the link died or the password was rejected.
+        return {
+          success: false,
+          error: err instanceof ApiError ? err.message : "Could not activate this account.",
+        }
+      }
+    },
+    [],
+  )
+
   const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout", { refreshToken: tokenStore.refresh })
@@ -81,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, activate, logout }}>
       {children}
     </AuthContext.Provider>
   )

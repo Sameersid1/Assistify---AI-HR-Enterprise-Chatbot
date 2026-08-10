@@ -29,10 +29,21 @@ async function main(): Promise<void> {
     }
   }
 
-  const users = await db.collection('users').find({}, { projection: { email: 1, role: 1 } }).toArray();
+  const users = await db
+    .collection('users')
+    .find({}, { projection: { email: 1, role: 1, status: 1, passwordHash: 1, invitationExpiresAt: 1 } })
+    .toArray();
   if (users.length) {
     console.log('\n  users:');
-    for (const u of users) console.log(`    ${String(u.email).padEnd(24)} ${u.role}`);
+    console.log(`    ${'email'.padEnd(26)}${'role'.padEnd(13)}${'status'.padEnd(13)}password`);
+    for (const u of users) {
+      // A user stuck at INVITED with no passwordHash never completed activation —
+      // the usual cause of "invalid email or password" right after being invited.
+      const pw = u.passwordHash ? 'set' : 'NOT SET';
+      console.log(
+        `    ${String(u.email).padEnd(26)}${String(u.role).padEnd(13)}${String(u.status).padEnd(13)}${pw}`,
+      );
+    }
   }
 
   try {
