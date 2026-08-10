@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+﻿import React, { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { api, ApiError } from "@/lib/api"
+import type { InviteRequest, InviteResponse } from "@/lib/types"
 import {
   UserCheck,
   Mail,
@@ -61,7 +63,9 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
     system_settings: false,
   })
 
-  const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
+  const [result, setResult] = useState<InviteResponse | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const handleRoleChange = (role: "hr" | "it_support" | "admin") => {
@@ -96,40 +100,60 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.email) return
+    if (!formData.email || isSubmitting) return
 
-    const activePermissions = Object.keys(permissions).filter((k) => permissions[k])
-    const newStaff: StaffInviteData = {
-      id: `inv-${Date.now().toString().slice(-4)}`,
-      name: formData.name || formData.email.split("@")[0],
-      email: formData.email,
-      personalEmail: formData.personalEmail || formData.email,
-      role: formData.role,
-      permissions: activePermissions,
-      expiresIn: formData.expiry,
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      // The server creates the user, mints a single-use token and emails it.
+      // It also re-checks the role-creation whitelist (D22), so a role this
+      // account may not create is refused here even if the UI offered it.
+      const invite = await api.post<InviteResponse>("/users/invite", {
+        email: formData.email.trim(),
+        ...(formData.personalEmail.trim() ? { personalEmail: formData.personalEmail.trim() } : {}),
+        fullName: formData.name.trim() || formData.email.split("@")[0],
+        role: formData.role,
+      } satisfies InviteRequest)
+
+      setResult(invite)
+
+      // Keep the caller's list in step without waiting for a refetch.
+      onInviteStaff({
+        id: invite.user.id,
+        name: invite.user.fullName,
+        email: invite.user.email,
+        personalEmail: invite.invitationSentTo,
+        role: formData.role,
+        permissions: Object.keys(permissions).filter((k) => permissions[k]),
+        expiresIn: formData.expiry,
+      })
+    } catch (err) {
+      setSubmitError(
+        err instanceof ApiError
+          ? err.code === "EMAIL_TAKEN"
+            ? "Someone already has that work email."
+            : err.message
+          : "Could not send the invitation. Please try again.",
+      )
+    } finally {
+      setIsSubmitting(false)
     }
-
-    onInviteStaff(newStaff)
-
-    // Generate mock activation token with work and personal email
-    const token = `adm_${Math.random().toString(36).substring(2, 10)}`
-    const sendToEmail = formData.personalEmail || formData.email
-    const activationUrl = `${window.location.origin}/activate?token=${token}&email=${encodeURIComponent(formData.email)}&personalEmail=${encodeURIComponent(sendToEmail)}&role=${formData.role}&name=${encodeURIComponent(formData.name || "")}`
-    setCreatedInviteLink(activationUrl)
   }
 
   const handleCopy = () => {
-    if (createdInviteLink) {
-      navigator.clipboard.writeText(createdInviteLink)
+    if (result) {
+      navigator.clipboard.writeText(result.activationUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
   }
 
   const handleDone = () => {
-    setCreatedInviteLink(null)
+    setResult(null)
+    setSubmitError(null)
     setFormData({
       name: "",
       email: "",
@@ -161,7 +185,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
         </div>
 
         {/* Modal Content */}
-        {createdInviteLink ? (
+        {result ? (
           <div className="p-6 space-y-5 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
               <CheckCircle2 className="h-8 w-8" />
@@ -177,7 +201,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                   {formData.personalEmail || formData.email}
                 </strong>
                 <span className="block text-[11px] text-zinc-400 mt-0.5">
-                  (Assigned Role: <strong className="uppercase">{formData.role.replace("_", " ")}</strong> · Corporate: {formData.email})
+                  (Assigned Role: <strong className="uppercase">{formData.role.replace("_", " ")}</strong> Â· Corporate: {formData.email})
                 </span>
               </p>
             </div>
@@ -193,7 +217,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
-                  value={createdInviteLink}
+                  value={result.activationUrl}
                   className="h-8 text-xs font-mono bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 select-all"
                 />
                 <Button
@@ -400,8 +424,18 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                 <Button type="button" variant="outline" size="sm" onClick={onClose} className="text-xs h-8">
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-8 px-4 shadow-xs">
-                  Generate & Send Invite
+                {submitError && (
+                  <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                    {submitError}
+                  </div>
+                )}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSubmitting}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-semibold h-8 px-4 shadow-xs"
+                >
+                  {isSubmitting ? "Sending…" : "Generate & Send Invite"}
                 </Button>
               </div>
             </div>
