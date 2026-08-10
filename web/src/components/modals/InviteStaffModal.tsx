@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   Shield,
   CheckCircle2,
+  MailWarning,
   Copy,
   Sparkles,
   Lock,
@@ -187,23 +188,52 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
         {/* Modal Content */}
         {result ? (
           <div className="p-6 space-y-5 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
-              <CheckCircle2 className="h-8 w-8" />
+            <div
+              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
+                result.emailSent
+                  ? "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
+                  : "bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400"
+              }`}
+            >
+              {result.emailSent ? (
+                <CheckCircle2 className="h-8 w-8" />
+              ) : (
+                <MailWarning className="h-8 w-8" />
+              )}
             </div>
 
+            {/* The account exists either way — only delivery can fail. Saying
+                "dispatched" after a failed send sends the admin away believing
+                an email is on its way that never left, so split the two. */}
             <div className="space-y-1.5">
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Staff Invitation Dispatched!
+                {result.emailSent
+                  ? "Staff Invitation Dispatched!"
+                  : "Staff created — email could not be sent"}
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-                Activation invitation dispatched to personal inbox:{" "}
-                <strong className="text-amber-600 dark:text-amber-400 font-semibold">
-                  {formData.personalEmail || formData.email}
-                </strong>
-                <span className="block text-[11px] text-zinc-400 mt-0.5">
-                  (Assigned Role: <strong className="uppercase">{formData.role.replace("_", " ")}</strong> Â· Corporate: {formData.email})
-                </span>
-              </p>
+              {result.emailSent ? (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                  Activation invitation dispatched to personal inbox:{" "}
+                  <strong className="text-amber-600 dark:text-amber-400 font-semibold">
+                    {result.invitationSentTo}
+                  </strong>
+                  <span className="block text-[11px] text-zinc-400 mt-0.5">
+                    (Assigned Role: <strong className="uppercase">{formData.role.replace("_", " ")}</strong> · Corporate: {result.user.email})
+                  </span>
+                </p>
+              ) : (
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto space-y-1">
+                  <p>The account exists — send them the link below yourself.</p>
+                  {result.emailError && (
+                    <p className="font-mono text-[11px] text-amber-600 dark:text-amber-400">
+                      Mail server said: {result.emailError}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-zinc-400">
+                    They'll sign in with: {result.user.email}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-3.5 text-left space-y-2">
