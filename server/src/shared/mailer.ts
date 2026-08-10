@@ -1,11 +1,14 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { env } from '../config/env';
+import { isHttpMailConfigured, sendMailOverHttp } from './mailer.http';
 
 /**
  * Outbound email.
  *
- * Two transports behind one function:
+ * Three transports behind one function:
  *
+ *   BREVO_API_KEY set → real delivery over HTTPS. Preferred where it is set,
+ *                     because hosts that block SMTP ports cannot block port 443.
  *   SMTP_HOST set  → real delivery (Gmail, or any SMTP host).
  *   SMTP_HOST unset → Ethereal, a throwaway inbox that accepts everything and
  *                     hands back a preview URL. Nothing reaches a real person,
@@ -93,6 +96,13 @@ export interface MailInput {
 }
 
 export async function sendMail(input: MailInput): Promise<MailResult> {
+  // HTTPS first when configured: it is the only path that survives a host
+  // blocking SMTP ports, and it costs nothing to prefer it when available.
+  if (isHttpMailConfigured()) {
+    const result = await sendMailOverHttp(input);
+    return { sent: result.sent, error: result.error };
+  }
+
   try {
     const tx = await getTransporter();
     // Belt and braces: the transport timeouts cover the socket, this covers the
@@ -130,7 +140,7 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
   }
 }
 
-/** True when mail is going to a real SMTP host rather than the Ethereal sandbox. */
+/** True when mail reaches real inboxes rather than the Ethereal sandbox. */
 export function isRealMailConfigured(): boolean {
-  return Boolean(env.SMTP_HOST);
+  return isHttpMailConfigured() || Boolean(env.SMTP_HOST);
 }

@@ -45,6 +45,11 @@ const envSchema = z.object({
   SMTP_USER: z.string().trim().optional(),
   SMTP_PASS: z.string().optional(),
   MAIL_FROM: z.string().trim().default('Assistify <no-reply@assistify.local>'),
+
+  // Set this and mail goes out over HTTPS instead of SMTP. Needed on hosts that
+  // block outbound SMTP ports — common on free tiers, since that is how spam is
+  // sent. Takes priority over SMTP_* when present.
+  BREVO_API_KEY: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
