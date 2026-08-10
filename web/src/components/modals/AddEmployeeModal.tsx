@@ -96,7 +96,13 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         ...(formData.department ? { department: formData.department } : {}),
         ...(formData.designation ? { designation: formData.designation } : {}),
         employmentType: EMPLOYMENT_TYPES[formData.employmentType] ?? "FULL_TIME",
-        ...(formData.joiningDate ? { dateOfJoining: formData.joiningDate } : {}),
+        // <input type="date"> yields "2026-09-16". Send a full ISO datetime
+        // instead: it satisfies both branches of the server's union, so this
+        // does not depend on which server build is deployed. Anchored at UTC
+        // midnight so a joining date never shifts a day across timezones.
+        ...(formData.joiningDate
+          ? { dateOfJoining: new Date(`${formData.joiningDate}T00:00:00.000Z`).toISOString() }
+          : {}),
       } satisfies InviteRequest)
 
       setResult(invite)
