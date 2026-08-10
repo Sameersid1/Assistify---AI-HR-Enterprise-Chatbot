@@ -14,6 +14,7 @@
 import { connectDb, disconnectDb } from '../config/db';
 import { UserModel } from '../modules/users/user.model';
 import { LeaveBalanceModel, LeaveRequestModel, LEAVE_TYPES } from '../modules/leave/leave.model';
+import { countWorkingDays, toUtcDate } from '../shared/workdays';
 import { env } from '../config/env';
 
 const BASE = `http://localhost:${env.PORT}/api/v1`;
@@ -29,10 +30,23 @@ const createdRequestIds: string[] = [];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** `YYYY-MM-DD`, `offset` days from today. Ranges are 5 days wide so they always
- *  contain working days regardless of which weekday the matrix is run on. */
+/** `YYYY-MM-DD`, `offset` days from today (UTC, matching the server). */
 function day(offset: number): string {
   return new Date(Date.now() + offset * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * How many working days the server will count for a range.
+ *
+ * Assertions must not hardcode a number of days. A 5-calendar-day range spans
+ * 3, 4 or 5 working days depending on which weekday the matrix runs on, so a
+ * fixed expectation passes on Saturday and fails on Tuesday. Worse, two ranges
+ * that fit inside an 8-day allowance on one weekday can exceed it on another —
+ * which is exactly how the sick-leave tests below started starving each other.
+ * Ask the same function the server uses.
+ */
+function expectedDays(fromIso: string, toIso: string): number {
+  return countWorkingDays(toUtcDate(fromIso), toUtcDate(toIso));
 }
 
 function nextWeekendDay(weekday: 6 | 0): string {
@@ -352,12 +366,16 @@ async function run(): Promise<void> {
   );
   // A client that claims its 5-day holiday costs 0 days must not be believed:
   // `days` is stripped by the schema and recomputed from the dates.
+  // 3-day windows, so the two sick-leave probes together can never exceed the
+  // 8-day allowance no matter which weekday this runs on.
+  const spoofFrom = day(70);
+  const spoofTo = day(72);
   const spoofed = await call('POST', '/leave/requests', {
     token: nexoraEmp.token,
     body: {
       type: 'sick',
-      fromDate: day(70),
-      toDate: day(74),
+      fromDate: spoofFrom,
+      toDate: spoofTo,
       reason: 'Matrix probe (spoofed day count)',
       days: 0,
     },
@@ -365,8 +383,9 @@ async function run(): Promise<void> {
   if (spoofed.body?.data?.request?.id) createdRequestIds.push(spoofed.body.data.request.id);
   check(
     'a client-supplied day count is ignored — the server counts the dates',
-    spoofed.status === 201 && spoofed.body?.data?.request?.days >= 3,
-    `got ${spoofed.status} / days=${spoofed.body?.data?.request?.days}`,
+    spoofed.status === 201 &&
+      spoofed.body?.data?.request?.days === expectedDays(spoofFrom, spoofTo),
+    `sent days=0, expected ${expectedDays(spoofFrom, spoofTo)}, got ${spoofed.body?.data?.request?.days} (${spoofed.status})`,
   );
 
   // Role gates — §5 says IT must never see leave data at all.
@@ -486,8 +505,13 @@ async function run(): Promise<void> {
   // Cancelling releases the reservation — the balance must come all the way back.
   const toCancel = await call('POST', '/leave/requests', {
     token: nexoraEmp.token,
-    body: { type: 'sick', fromDate: day(50), toDate: day(54), reason: 'Matrix probe (cancel)' },
+    body: { type: 'sick', fromDate: day(50), toDate: day(52), reason: 'Matrix probe (cancel)' },
   });
+  check(
+    'a second sick request still fits inside the allowance',
+    toCancel.status === 201,
+    `got ${toCancel.status} / ${JSON.stringify(toCancel.body?.error)}`,
+  );
   const cancelId: string = toCancel.body?.data?.request?.id;
   if (cancelId) createdRequestIds.push(cancelId);
   const sickBefore = toCancel.body?.data?.balance;
