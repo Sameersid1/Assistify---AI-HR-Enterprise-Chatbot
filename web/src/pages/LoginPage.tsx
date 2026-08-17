@@ -140,10 +140,12 @@ export const LoginPage: React.FC = () => {
       if (res.success) {
         navigate("/app")
       } else {
-        setErrorMessage(res.error || "Invalid email or password")
+        // login() already phrases every failure identically; don't substitute a
+        // narrower message here or the portal case becomes distinguishable again.
+        setErrorMessage(res.error ?? "Sign in failed. Please try again.")
       }
     } catch {
-      setErrorMessage("Invalid email or password")
+      setErrorMessage("Sign in failed. Please try again.")
     } finally {
       setIsLoading(false)
     }

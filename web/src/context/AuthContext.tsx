@@ -1,6 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { api, ApiError, tokenStore } from "@/lib/api"
-import { ROLE_LABELS, toUser, type LoginResponse, type MeResponse, type User, type UserRole } from "@/lib/types"
+import { toUser, type LoginResponse, type MeResponse, type User, type UserRole } from "@/lib/types"
+
+/**
+ * One sentence for every rejected sign-in: unknown email, wrong password, or a
+ * real account whose role the selected portal does not cover.
+ *
+ * Wording the portal case differently would make the form answer questions it
+ * should not. "That address exists" is the obvious one; naming the role is
+ * worse, since it tells whoever is guessing which accounts are worth guessing
+ * at. Collapsing all three removes the difference there is to measure, and the
+ * wording still names both things a legitimate user should re-check.
+ */
+const SIGN_IN_FAILED =
+  "Invalid email or password, or this account does not belong to the selected portal."
 
 export type { UserRole, User }
 
@@ -85,11 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // employee in the admin portal would show them a dashboard stripped
         // of everything it advertises.
         if (allowedRoles && !allowedRoles.includes(data.user.role)) {
-          const label = ROLE_LABELS[data.user.role]
-          return {
-            success: false,
-            error: `Your account is registered as ${label}. Select the ${label} portal to sign in.`,
-          }
+          return { success: false, error: SIGN_IN_FAILED }
         }
 
         tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
@@ -106,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ? PASS_THROUGH.includes(err.code)
               ? err.message
               : // Never reveal which field was wrong — user-enumeration guard.
-                "Invalid email or password"
+                SIGN_IN_FAILED
             : "Something went wrong. Please try again."
         return { success: false, error: message }
       }

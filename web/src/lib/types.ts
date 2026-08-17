@@ -6,19 +6,6 @@
 export type UserRole = 'employee' | 'hr' | 'it_support' | 'admin' | 'super_admin'
 export type UserStatus = 'INVITED' | 'ACTIVE' | 'DEACTIVATED'
 
-/**
- * Display names for roles. Only ever shown to someone who has just proven they
- * own the account, so naming their own role leaks nothing — the same reasoning
- * that lets the API return "not activated yet" once the password checks out.
- */
-export const ROLE_LABELS: Record<UserRole, string> = {
-  employee: 'Employee',
-  hr: 'HR Manager',
-  it_support: 'IT Support',
-  admin: 'Administrator',
-  super_admin: 'Administrator',
-}
-
 /** Exactly what the API returns for a user (server: toPublicUser). */
 export interface ApiUser {
   id: string
