@@ -34,47 +34,31 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-type RoleType = "employee" | "hr" | "admin"
-
-interface RolePortal {
-  id: RoleType
-  label: string
-  icon: typeof User
-  subtext: string
-  defaultEmail: string
-}
-
 /**
- * Seeded demo accounts — MUST match server/src/scripts/seed.ts.
- * Regenerations keep reverting these to accounts that do not exist, which
- * produces "Invalid email or password" and looks like a backend fault.
- * If login breaks after a regen, CHECK HERE FIRST.
+ * Demo credential shortcuts — DEVELOPMENT ONLY.
+ *
+ * These are deliberately NOT a role picker. A sign-in form cannot choose its
+ * own role: the server resolves the role from the credentials and puts it in
+ * the JWT, and every route is gated on that value. Offering the choice here
+ * would imply the client has a say in it, and it has none — which is exactly
+ * the mental model the rest of this app is built to reject.
+ *
+ * They were also breaking production login. Selecting one overwrote whatever
+ * had been typed with a seeded address, and the seeded accounts do not exist
+ * outside a seeded database — so a real user who touched a tab got "invalid
+ * email or password" and it read as a backend fault. Gated on DEV so the
+ * deployed build never renders them at all.
+ *
+ * MUST match server/src/scripts/seed.ts. If dev login breaks after a frontend
+ * regeneration, CHECK HERE FIRST.
  */
 const DEMO_PASSWORD = "Password123!"
 
-const ROLE_PORTALS: RolePortal[] = [
-  {
-    id: "employee",
-    label: "Employee",
-    icon: User,
-    subtext: "Self-service queries, leave balances & requests",
-    defaultEmail: "employee@nexora.com",
-  },
-  {
-    id: "hr",
-    label: "HR Manager",
-    icon: Users,
-    subtext: "Leave approvals, tickets & workforce analytics",
-    defaultEmail: "hr@nexora.com",
-  },
-  {
-    id: "admin",
-    label: "Administrator",
-    icon: Shield,
-    subtext: "System configurations, RBAC & user directory",
-    defaultEmail: "admin@nexora.com",
-  },
-]
+const DEMO_ACCOUNTS = [
+  { label: "Employee", icon: User, email: "employee@nexora.com" },
+  { label: "HR", icon: Users, email: "hr@nexora.com" },
+  { label: "Admin", icon: Shield, email: "admin@nexora.com" },
+] as const
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
@@ -83,7 +67,6 @@ export const LoginPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<RoleType>("employee")
 
   const {
     register,
@@ -99,9 +82,8 @@ export const LoginPage: React.FC = () => {
     },
   })
 
-  const handleRoleSelect = (portal: RolePortal) => {
-    setSelectedRole(portal.id)
-    setValue("email", portal.defaultEmail)
+  const fillDemoAccount = (email: string) => {
+    setValue("email", email)
     setValue("password", DEMO_PASSWORD)
     setErrorMessage(null)
   }
@@ -122,8 +104,6 @@ export const LoginPage: React.FC = () => {
       setIsLoading(false)
     }
   }
-
-  const activePortal = ROLE_PORTALS.find((p) => p.id === selectedRole) || ROLE_PORTALS[0]
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100 flex selection:bg-indigo-600 selection:text-white">
@@ -174,45 +154,35 @@ export const LoginPage: React.FC = () => {
               Welcome back
             </h1>
             <p className="text-xs text-zinc-500 mt-1">
-              Select your role portal to sign in to your workspace
+              Sign in with your work email. Your access level is set by your account.
             </p>
           </div>
 
-          {/* 3 Role Selection Tabs (NO personal names, pure role classification) */}
-          <div className="space-y-2">
-            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
-              {ROLE_PORTALS.map((portal) => {
-                const Icon = portal.icon
-                const isSelected = selectedRole === portal.id
-                return (
-                  <button
-                    key={portal.id}
-                    type="button"
-                    onClick={() => handleRoleSelect(portal)}
-                    className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-medium transition-all ${
-                      isSelected
-                        ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-2xs font-semibold"
-                        : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="text-[11px] leading-tight">{portal.label}</span>
-                    {isSelected && (
-                      <motion.div
-                        layoutId="activeRoleIndicator"
-                        className="absolute inset-0 border border-indigo-600/40 dark:border-indigo-500/40 rounded-lg pointer-events-none"
-                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                      />
-                    )}
-                  </button>
-                )
-              })}
+          {/* Development-only credential shortcuts. Not a role picker — see the
+              DEMO_ACCOUNTS comment above for why that distinction matters. */}
+          {import.meta.env.DEV && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-mono uppercase tracking-wide text-zinc-400">
+                Dev only · seeded accounts
+              </p>
+              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60">
+                {DEMO_ACCOUNTS.map((account) => {
+                  const Icon = account.icon
+                  return (
+                    <button
+                      key={account.email}
+                      type="button"
+                      onClick={() => fillDemoAccount(account.email)}
+                      className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800/60 transition-all"
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="text-[11px] leading-tight">{account.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-
-            <p className="text-[11px] text-center text-zinc-400">
-              {activePortal.subtext}
-            </p>
-          </div>
+          )}
 
           {/* Error Alert */}
           {errorMessage && (
@@ -290,7 +260,7 @@ export const LoginPage: React.FC = () => {
                     <span>Verifying credentials...</span>
                   </>
                 ) : (
-                  <span>Sign In as {activePortal.label}</span>
+                  <span>Sign In</span>
                 )}
               </Button>
             </motion.div>
