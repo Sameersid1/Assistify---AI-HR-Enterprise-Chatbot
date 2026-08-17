@@ -18,7 +18,6 @@ import {
   User,
   Users,
   Shield,
-  Headphones,
   ArrowRight,
   CheckCircle2,
 } from "lucide-react"
@@ -89,16 +88,13 @@ const ROLE_PORTALS: readonly RolePortal[] = [
     label: "Administrator",
     icon: Shield,
     subtext: "System configurations, RBAC & user directory",
-    roles: ["admin", "super_admin"],
+    // it_support has no portal of its own, and a role listed in none of them
+    // cannot sign in at all — so it sits with the staff portal. The label
+    // undersells it; what the account can actually reach is unaffected, since
+    // the server gates every route on the role in the token and IT support is
+    // deliberately shut out of leave data either way.
+    roles: ["admin", "super_admin", "it_support"],
     demoEmail: "admin@nexora.com",
-  },
-  {
-    id: "it_support",
-    label: "IT Support",
-    icon: Headphones,
-    subtext: "Hardware requests, access issues & tech tickets",
-    roles: ["it_support"],
-    demoEmail: "it@nexora.com",
   },
 ]
 
@@ -209,7 +205,7 @@ export const LoginPage: React.FC = () => {
           {/* Role portals. The selection is enforced: login() rejects an account
               whose role is not in the chosen portal's `roles`. */}
           <div className="space-y-2">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
+            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
               {ROLE_PORTALS.map((portal) => {
                 const Icon = portal.icon
                 const isSelected = selectedPortal.id === portal.id
