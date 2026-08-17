@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { api, ApiError, tokenStore } from "@/lib/api"
-import { toUser, type LoginResponse, type MeResponse, type User, type UserRole } from "@/lib/types"
+import { ROLE_LABELS, toUser, type LoginResponse, type MeResponse, type User, type UserRole } from "@/lib/types"
 
 export type { UserRole, User }
 
@@ -9,7 +9,16 @@ interface AuthContextType {
   isAuthenticated: boolean
   /** True while we restore the session on first load — guards render a spinner until false. */
   isLoading: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  /**
+   * `allowedRoles` restricts which accounts may complete this sign-in — the
+   * sign-in page passes the roles its selected portal covers. Enforced here so
+   * the check happens before any session is stored; see the note in the body.
+   */
+  login: (
+    email: string,
+    password: string,
+    allowedRoles?: readonly UserRole[],
+  ) => Promise<{ success: boolean; error?: string }>
   /**
    * Adopt a session the server already issued — used by activation, which
    * returns tokens directly so the new employee lands in the app without
@@ -53,12 +62,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   const login = useCallback(
-    async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    async (
+      email: string,
+      password: string,
+      allowedRoles?: readonly UserRole[],
+    ): Promise<{ success: boolean; error?: string }> => {
       try {
         const data = await api.publicPost<LoginResponse>("/auth/login", {
           email: email.trim().toLowerCase(),
           password,
         })
+
+        // The portal gate runs BEFORE the tokens are stored, so a rejected
+        // sign-in leaves no session behind to clean up — the server minted a
+        // pair, we simply never keep them.
+        //
+        // This is a routing convenience, not a security boundary. Authority
+        // still comes from the role inside the token, which the server put
+        // there and checks on every request; a caller who skips this page
+        // entirely gets exactly the access their role allows. What the gate
+        // buys is a clear answer instead of a confusing one — landing an
+        // employee in the admin portal would show them a dashboard stripped
+        // of everything it advertises.
+        if (allowedRoles && !allowedRoles.includes(data.user.role)) {
+          const label = ROLE_LABELS[data.user.role]
+          return {
+            success: false,
+            error: `Your account is registered as ${label}. Select the ${label} portal to sign in.`,
+          }
+        }
+
         tokenStore.set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
         setUser(toUser(data.user))
         return { success: true }

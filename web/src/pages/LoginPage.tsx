@@ -18,10 +18,12 @@ import {
   User,
   Users,
   Shield,
+  Headphones,
   ArrowRight,
   CheckCircle2,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
+import type { UserRole } from "@/lib/types"
 import { useTheme } from "@/context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,30 +37,70 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>
 
 /**
- * Demo credential shortcuts — DEVELOPMENT ONLY.
+ * Sign-in portals.
  *
- * These are deliberately NOT a role picker. A sign-in form cannot choose its
- * own role: the server resolves the role from the credentials and puts it in
- * the JWT, and every route is gated on that value. Offering the choice here
- * would imply the client has a say in it, and it has none — which is exactly
- * the mental model the rest of this app is built to reject.
+ * `roles` is what makes the selection mean something: the chosen portal's list
+ * is handed to login(), which rejects the attempt when the authenticated
+ * account's role is not in it. The check is a routing convenience rather than a
+ * security boundary — authority comes from the role the server writes into the
+ * token — but it turns a wrong pick into a clear message instead of a dashboard
+ * missing everything the portal advertises.
  *
- * They were also breaking production login. Selecting one overwrote whatever
- * had been typed with a seeded address, and the seeded accounts do not exist
- * outside a seeded database — so a real user who touched a tab got "invalid
- * email or password" and it read as a backend fault. Gated on DEV so the
- * deployed build never renders them at all.
+ * Every role must appear in some portal's `roles`, or accounts of that role can
+ * never sign in. super_admin rides with admin because it sees the same surface.
+ * Adding a portal is one entry here; nothing else needs to change.
  *
- * MUST match server/src/scripts/seed.ts. If dev login breaks after a frontend
- * regeneration, CHECK HERE FIRST.
+ * `demoEmail` prefills the form on selection in development only. It used to
+ * run in production too, where it overwrote a real address with a seeded one
+ * that no deployed database holds — the attempt then failed as "invalid email
+ * or password" and read as a backend fault. MUST match seed.ts; if dev sign-in
+ * breaks after a frontend regeneration, CHECK HERE FIRST.
  */
 const DEMO_PASSWORD = "Password123!"
 
-const DEMO_ACCOUNTS = [
-  { label: "Employee", icon: User, email: "employee@nexora.com" },
-  { label: "HR", icon: Users, email: "hr@nexora.com" },
-  { label: "Admin", icon: Shield, email: "admin@nexora.com" },
-] as const
+interface RolePortal {
+  id: string
+  label: string
+  icon: typeof User
+  subtext: string
+  roles: readonly UserRole[]
+  demoEmail: string
+}
+
+const ROLE_PORTALS: readonly RolePortal[] = [
+  {
+    id: "employee",
+    label: "Employee",
+    icon: User,
+    subtext: "Self-service queries, leave balances & requests",
+    roles: ["employee"],
+    demoEmail: "employee@nexora.com",
+  },
+  {
+    id: "hr",
+    label: "HR Manager",
+    icon: Users,
+    subtext: "Leave approvals, tickets & workforce analytics",
+    roles: ["hr"],
+    demoEmail: "hr@nexora.com",
+  },
+  {
+    id: "admin",
+    label: "Administrator",
+    icon: Shield,
+    subtext: "System configurations, RBAC & user directory",
+    roles: ["admin", "super_admin"],
+    demoEmail: "admin@nexora.com",
+  },
+  {
+    id: "it_support",
+    label: "IT Support",
+    icon: Headphones,
+    subtext: "Hardware requests, access issues & tech tickets",
+    roles: ["it_support"],
+    demoEmail: "it@nexora.com",
+  },
+]
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
@@ -67,6 +109,7 @@ export const LoginPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [selectedPortal, setSelectedPortal] = useState<RolePortal>(ROLE_PORTALS[0])
 
   const {
     register,
@@ -82,17 +125,22 @@ export const LoginPage: React.FC = () => {
     },
   })
 
-  const fillDemoAccount = (email: string) => {
-    setValue("email", email)
-    setValue("password", DEMO_PASSWORD)
+  const handlePortalSelect = (portal: RolePortal) => {
+    setSelectedPortal(portal)
     setErrorMessage(null)
+    // Prefill only in development — see the ROLE_PORTALS note on why this must
+    // never touch a deployed build.
+    if (import.meta.env.DEV) {
+      setValue("email", portal.demoEmail)
+      setValue("password", DEMO_PASSWORD)
+    }
   }
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true)
     setErrorMessage(null)
     try {
-      const res = await login(data.email, data.password)
+      const res = await login(data.email, data.password, selectedPortal.roles)
       if (res.success) {
         navigate("/app")
       } else {
@@ -154,35 +202,47 @@ export const LoginPage: React.FC = () => {
               Welcome back
             </h1>
             <p className="text-xs text-zinc-500 mt-1">
-              Sign in with your work email. Your access level is set by your account.
+              Select your role portal to sign in to your workspace
             </p>
           </div>
 
-          {/* Development-only credential shortcuts. Not a role picker — see the
-              DEMO_ACCOUNTS comment above for why that distinction matters. */}
-          {import.meta.env.DEV && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] font-mono uppercase tracking-wide text-zinc-400">
-                Dev only · seeded accounts
-              </p>
-              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60">
-                {DEMO_ACCOUNTS.map((account) => {
-                  const Icon = account.icon
-                  return (
-                    <button
-                      key={account.email}
-                      type="button"
-                      onClick={() => fillDemoAccount(account.email)}
-                      className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800/60 transition-all"
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="text-[11px] leading-tight">{account.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+          {/* Role portals. The selection is enforced: login() rejects an account
+              whose role is not in the chosen portal's `roles`. */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
+              {ROLE_PORTALS.map((portal) => {
+                const Icon = portal.icon
+                const isSelected = selectedPortal.id === portal.id
+                return (
+                  <button
+                    key={portal.id}
+                    type="button"
+                    onClick={() => handlePortalSelect(portal)}
+                    aria-pressed={isSelected}
+                    className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-medium transition-all ${
+                      isSelected
+                        ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-2xs font-semibold"
+                        : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="text-[11px] leading-tight">{portal.label}</span>
+                    {isSelected && (
+                      <motion.div
+                        layoutId="activeRoleIndicator"
+                        className="absolute inset-0 border border-indigo-600/40 dark:border-indigo-500/40 rounded-lg pointer-events-none"
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                )
+              })}
             </div>
-          )}
+
+            <p className="text-[11px] text-center text-zinc-400">
+              {selectedPortal.subtext}
+            </p>
+          </div>
 
           {/* Error Alert */}
           {errorMessage && (
@@ -260,7 +320,7 @@ export const LoginPage: React.FC = () => {
                     <span>Verifying credentials...</span>
                   </>
                 ) : (
-                  <span>Sign In</span>
+                  <span>Sign In as {selectedPortal.label}</span>
                 )}
               </Button>
             </motion.div>
