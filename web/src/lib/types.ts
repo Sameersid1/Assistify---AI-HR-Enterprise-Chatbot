@@ -102,6 +102,24 @@ export interface InviteResponse {
   emailError?: string
 }
 
+/* ── Assistant ──────────────────────────────────────────────────────────── */
+
+/** One turn of the transcript. The server is stateless — send the whole thing. */
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[]
+}
+
+export interface ChatResponse {
+  reply: string
+  /** Tools the assistant actually called, so the UI can show where facts came from. */
+  toolsUsed: string[]
+}
+
 /** The success/error envelope every endpoint uses. */
 export type ApiEnvelope<T> =
   | { success: true; data: T }

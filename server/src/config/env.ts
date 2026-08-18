@@ -50,6 +50,12 @@ const envSchema = z.object({
   // block outbound SMTP ports — common on free tiers, since that is how spam is
   // sent. Takes priority over SMTP_* when present.
   BREVO_API_KEY: z.string().trim().optional(),
+
+  // ── Assistant ──────────────────────────────────────────────────────────────
+  // Optional so a fresh clone still boots: without it every other feature works
+  // and only POST /chat refuses, with a message saying why. Unlike the database
+  // and JWT secrets, an unset key here is a missing feature, not a broken server.
+  ANTHROPIC_API_KEY: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
