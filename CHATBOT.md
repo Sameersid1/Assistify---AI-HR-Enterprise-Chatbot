@@ -176,8 +176,8 @@ So we build the tool list from your role:
 
 | Your role | Tools your assistant is given |
 |---|---|
-| Employee | your balance, your requests, company policy |
-| IT Support | your balance, your requests, company policy |
+| Employee | your balance, your requests, company policy, **search policy documents**, **apply for leave**, **cancel your request** |
+| IT Support | same six as employee |
 | HR | the above **+** all company leave requests, employee directory |
 | Admin | the above **+** all company leave requests, employee directory |
 | Super Admin | the above **+** all company leave requests, employee directory |
@@ -187,8 +187,8 @@ something it has never heard of, cannot be argued into calling it, and cannot
 even mention it. That is stronger than checking permission inside the tool.
 
 We verified this by running the function for all five roles and printing the
-tool names — employees got 3, HR/admin got 5. The split matches
-`leave.routes.ts` exactly.
+tool names — employees and IT support got 6, HR and admin got 8. The split
+matches `leave.routes.ts` exactly.
 
 **Rule 3: the AI's arguments are untrusted input.**
 

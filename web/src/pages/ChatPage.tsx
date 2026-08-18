@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react"
-import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench, PenLine } from "lucide-react"
+import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench, PenLine, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -41,10 +41,44 @@ const SUGGESTIONS = [
   "What is the company leave policy?",
   "Show me my leave requests",
   "Apply for 1 day casual leave next Monday",
+  "What does the policy say about notice periods?",
 ]
 
 const now = () =>
   new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+
+/**
+ * The transcript survives a reload, kept per user so a shared machine never
+ * shows one person's conversation to the next.
+ *
+ * localStorage rather than the database on purpose: this is convenience, not
+ * a record. The server is stateless by design — it re-reads every fact through
+ * a tool on each turn — so a lost transcript costs nothing but retyping, and
+ * storing HR conversations server-side would be a retention decision nobody has
+ * made.
+ */
+const storageKey = (userId: string) => `assistify.chat.${userId}`
+
+function loadTranscript(userId: string): DisplayMessage[] {
+  try {
+    const raw = localStorage.getItem(storageKey(userId))
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    // Anything could be in localStorage — an old shape from a previous build,
+    // or something a user edited. Validate rather than trust it into state.
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (m): m is DisplayMessage =>
+        !!m &&
+        typeof m === "object" &&
+        typeof (m as DisplayMessage).content === "string" &&
+        ((m as DisplayMessage).role === "user" ||
+          (m as DisplayMessage).role === "assistant"),
+    )
+  } catch {
+    return []
+  }
+}
 
 export const ChatPage: React.FC = () => {
   const { user } = useAuth()
@@ -54,10 +88,32 @@ export const ChatPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const scrollAnchor = useRef<HTMLDivElement>(null)
 
+  // Restore on mount, and whenever the signed-in user changes.
+  useEffect(() => {
+    setMessages(user?.id ? loadTranscript(user.id) : [])
+  }, [user?.id])
+
+  // Persist after every turn. Cheap at this size, and it means a reload or an
+  // accidental navigation does not lose the conversation.
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      localStorage.setItem(storageKey(user.id), JSON.stringify(messages))
+    } catch {
+      // Quota exceeded or storage disabled — the chat still works in memory.
+    }
+  }, [messages, user?.id])
+
   // Keep the newest turn in view as the transcript grows.
   useEffect(() => {
     scrollAnchor.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isThinking])
+
+  const clearChat = () => {
+    setMessages([])
+    setErrorMessage(null)
+    if (user?.id) localStorage.removeItem(storageKey(user.id))
+  }
 
   const send = async (text: string) => {
     const question = text.trim()
@@ -129,10 +185,21 @@ export const ChatPage: React.FC = () => {
               Assistify Assistant
             </h2>
             <p className="text-[10px] text-zinc-500">
-              Answers from your live HR records
+              Answers from your live HR records and policy documents
             </p>
           </div>
         </div>
+
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={clearChat}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            New chat
+          </button>
+        )}
       </div>
 
       {/* Transcript */}
