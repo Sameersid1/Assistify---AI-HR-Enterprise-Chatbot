@@ -5,7 +5,8 @@ import type { FunctionDeclaration } from '@google/genai' with { 'resolution-mode
 import { CompanyModel } from '../companies/company.model';
 import * as leaveService from '../leave/leave.service';
 import * as userService from '../users/user.service';
-import { listLeaveQuerySchema } from '../leave/leave.schema';
+import { applyLeaveSchema, listLeaveQuerySchema } from '../leave/leave.schema';
+import { toObjectId } from '../../shared/objectId';
 import type { AuthContext, Role } from '../../shared/types';
 
 /**
@@ -133,12 +134,82 @@ function selfServiceTools(auth: AuthContext): ChatTool[] {
         };
       },
     },
+
+    // ── Write tools ────────────────────────────────────────────────────────
+    // Both act only on the caller's own record, and both are reversible: an
+    // application can be cancelled while it is still pending. That is why they
+    // are safe to expose where approving someone else's leave is not — see the
+    // note above approverTools().
+    {
+      declaration: {
+        name: 'apply_for_leave',
+        description:
+          'Submit a leave request for the signed-in employee. Dates are calendar ' +
+          'dates in YYYY-MM-DD form and the range is inclusive; work out real ' +
+          'dates from relative phrasing like "next Monday" using the current date ' +
+          'you were given. Only working days are counted and charged — weekends ' +
+          'inside the range are free. The request goes to HR as PENDING; it is ' +
+          'not approved by submitting it. Confirm the exact dates with the person ' +
+          'before calling this unless they already stated them precisely.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['annual', 'casual', 'sick'],
+              description: 'Which allowance to draw from',
+            },
+            fromDate: { type: 'string', description: 'First day off, YYYY-MM-DD' },
+            toDate: {
+              type: 'string',
+              description: 'Last day off, YYYY-MM-DD. Same as fromDate for a single day.',
+            },
+            reason: {
+              type: 'string',
+              description: 'Short reason for the approver, 3-500 characters',
+            },
+          },
+          required: ['type', 'fromDate', 'toDate', 'reason'],
+        },
+      },
+      run: (args) => leaveService.applyForLeave(auth, applyLeaveSchema.parse(args)),
+    },
+
+    {
+      declaration: {
+        name: 'cancel_my_leave_request',
+        description:
+          "Withdraw one of the signed-in employee's own pending leave requests and " +
+          'return the reserved days to their balance. Only works while the request ' +
+          'is still PENDING — an approved or rejected one cannot be withdrawn this ' +
+          'way. Get the id from list_my_leave_requests first; never guess one.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            requestId: {
+              type: 'string',
+              description: 'The id field from list_my_leave_requests',
+            },
+          },
+          required: ['requestId'],
+        },
+      },
+      run: (args) =>
+        leaveService.cancelLeave(auth, toObjectId(String(args.requestId), 'LeaveRequest')),
+    },
   ];
 }
 
 /**
  * Tools that read other people's data. Withheld from anyone the leave routes
  * would not let through — see the whitelist note at the top of this file.
+ *
+ * Deliberately read-only, even for roles allowed to approve. Approving or
+ * rejecting is a decision about someone else that changes their balance and is
+ * recorded against the approver's name; a misheard date in an application is
+ * cancellable by the person who made it, an approval granted on a
+ * misunderstanding is not. Those two live on the approvals page, where the
+ * request being decided is on screen while the decision is made.
  */
 function approverTools(auth: AuthContext): ChatTool[] {
   return [

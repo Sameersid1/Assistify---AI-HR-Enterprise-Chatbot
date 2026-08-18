@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react"
-import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench } from "lucide-react"
+import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench, PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -25,12 +25,21 @@ const TOOL_LABELS: Record<string, string> = {
   get_company_leave_policy: "Company leave policy",
   list_company_leave_requests: "Company leave requests",
   list_employees: "Employee directory",
+  apply_for_leave: "Submitted a leave request",
+  cancel_my_leave_request: "Cancelled a leave request",
 }
+
+/**
+ * Tools that changed something. Their chips are marked differently so a write
+ * is never mistaken for a lookup while skim-reading a transcript.
+ */
+const WRITE_TOOLS = new Set(["apply_for_leave", "cancel_my_leave_request"])
 
 const SUGGESTIONS = [
   "How many leave days do I have left?",
   "What is the company leave policy?",
   "Show me my leave requests",
+  "Apply for 1 day casual leave next Monday",
 ]
 
 const now = () =>
@@ -186,15 +195,26 @@ export const ChatPage: React.FC = () => {
               {/* Where the answer came from — real tool calls, not a label. */}
               {msg.toolsUsed && msg.toolsUsed.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {[...new Set(msg.toolsUsed)].map((tool) => (
-                    <span
-                      key={tool}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                    >
-                      <Wrench className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
-                      <span>{TOOL_LABELS[tool] ?? tool}</span>
-                    </span>
-                  ))}
+                  {[...new Set(msg.toolsUsed)].map((tool) => {
+                    const isWrite = WRITE_TOOLS.has(tool)
+                    return (
+                      <span
+                        key={tool}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] ${
+                          isWrite
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                        }`}
+                      >
+                        {isWrite ? (
+                          <PenLine className="h-3 w-3" />
+                        ) : (
+                          <Wrench className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                        <span>{TOOL_LABELS[tool] ?? tool}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
 
