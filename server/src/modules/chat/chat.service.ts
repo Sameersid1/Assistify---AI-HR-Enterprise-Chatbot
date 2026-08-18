@@ -161,10 +161,13 @@ function describeAiError(err: unknown): AppError {
   console.error(`🤖 Gemini request failed (status ${status ?? 'unknown'}): ${detail}`);
 
   if (status === 429) {
+    // Per-minute and per-day quotas both return 429, and the difference matters
+    // enormously — one clears in under a minute, the other not until the quota
+    // resets. Only Google's text distinguishes them, so it goes to the user.
     return new AppError(
       429,
       'AI_RATE_LIMITED',
-      'The assistant has hit its free-tier limit for now. Wait a minute and try again.',
+      `The assistant has hit its free-tier limit. If this is the per-minute limit it clears in about a minute. (${detail})`,
     );
   }
   if (status === 401 || status === 403) {
