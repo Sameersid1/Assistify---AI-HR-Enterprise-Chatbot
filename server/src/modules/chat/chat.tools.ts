@@ -41,6 +41,15 @@ import type { AuthContext, Role } from '../../shared/types';
 
 const APPROVER_ROLES: readonly Role[] = ['hr', 'admin', 'super_admin'];
 
+/**
+ * Whether this caller gets the company-wide tools. Exported so the system
+ * prompt can state the limit as a fact rather than a condition — a model can
+ * see the tools it has, but has no way to know what it is missing.
+ */
+export function isApprover(role: Role): boolean {
+  return APPROVER_ROLES.includes(role);
+}
+
 /** A declaration Gemini sees, paired with the function we actually run. */
 export interface ChatTool {
   declaration: FunctionDeclaration;

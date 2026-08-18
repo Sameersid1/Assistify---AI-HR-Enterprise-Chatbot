@@ -6,7 +6,7 @@ import { env } from '../../config/env';
 import { AppError } from '../../shared/errors';
 import { UserModel } from '../users/user.model';
 import { CompanyModel } from '../companies/company.model';
-import { buildTools, type ChatTool } from './chat.tools';
+import { buildTools, isApprover, type ChatTool } from './chat.tools';
 import type { AuthContext } from '../../shared/types';
 import type { ChatInput } from './chat.schema';
 
@@ -83,10 +83,24 @@ async function describeCaller(auth: AuthContext): Promise<string> {
     .join('\n');
 }
 
-function buildSystemPrompt(callerDescription: string): string {
+function buildSystemPrompt(callerDescription: string, approver: boolean): string {
   // Today's date is included because leave questions are relative ("how many do
   // I have left this year", "am I off next Friday") and the model has no clock.
   const today = new Date().toISOString().slice(0, 10);
+
+  // Stated outright rather than left to inference. A model can see the tools it
+  // holds but has no way to notice the ones withheld from it, so "if your tools
+  // only cover this person" is a test it cannot actually run — it just answers
+  // from what it has and never mentions the edge. Naming the boundary is what
+  // makes it repeatable to the user.
+  const scope = approver
+    ? `You can see leave records for everyone in this company and the full
+employee directory, as well as this person's own records.`
+    : `You can ONLY see this person's own records. You cannot see anyone else's
+leave, the company-wide approval queue, or the employee directory — those tools
+are not available to you. When they ask about other people or about everyone,
+answer for them and say plainly that your view stops at their own records and
+that HR can see the rest. Do not present it as a complete answer.`;
 
   return `You are Assistify, the HR assistant for an employee self-service portal.
 
@@ -94,6 +108,9 @@ You are talking to:
 ${callerDescription}
 
 Today's date is ${today} (UTC).
+
+What you can see:
+${scope}
 
 How to answer:
 - Get facts from your tools. Never estimate, guess, or reuse a number from
@@ -104,10 +121,9 @@ How to answer:
   benefits, or policy documents, the honest answer is that you cannot see
   those yet; reaching for a leave tool because leave is the nearest thing you
   do have is worse than admitting the gap, because it looks like an answer.
-- If your tools only cover this person but they asked about everyone, say that
-  in the same breath as the answer: tell them what you can see, that it is
-  limited to their own records, and that HR can see the rest. Never let a
-  narrower answer pass as if it were the question they asked.
+- Never let a narrower answer pass as if it were the question they asked. If
+  what you can see is smaller than what they asked about, say so in the same
+  breath as the answer.
 - Do not invent policy. You only know what your tools return.
 - Answer in two or three sentences unless asked for detail. This is a chat
   window, not a report.
@@ -144,7 +160,7 @@ export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatRes
   const tools = buildTools(auth);
   const byName = new Map(tools.map((t) => [t.declaration.name as string, t]));
 
-  const systemInstruction = buildSystemPrompt(await describeCaller(auth));
+  const systemInstruction = buildSystemPrompt(await describeCaller(auth), isApprover(auth.role));
 
   // Gemini names the assistant's side of a transcript "model", not "assistant".
   const contents: Content[] = input.messages.map((m) => ({
