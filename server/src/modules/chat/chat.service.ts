@@ -1,44 +1,60 @@
-import Anthropic from '@anthropic-ai/sdk';
+// Type-only: @google/genai is ESM and this server compiles to CommonJS, so a
+// static import would fail at build. Types are erased; the class itself is
+// pulled in with a dynamic import() inside getClient(), which CommonJS can do.
+import type { Content, GoogleGenAI, Part } from '@google/genai' with { 'resolution-mode': 'import' };
 import { env } from '../../config/env';
 import { AppError } from '../../shared/errors';
 import { UserModel } from '../users/user.model';
 import { CompanyModel } from '../companies/company.model';
-import { buildTools } from './chat.tools';
+import { buildTools, type ChatTool } from './chat.tools';
 import type { AuthContext } from '../../shared/types';
 import type { ChatInput } from './chat.schema';
 
 /**
  * The assistant.
  *
- * Claude decides which tools to call; the SDK's tool runner executes them and
- * feeds the results back until there is nothing left to call. The loop is not
- * hand-written here — see chat.tools.ts for the part that matters, which is
- * that every tool runs as the person chatting.
+ * Gemini is given a list of functions it may request; it never touches the
+ * database. It asks for one, we run it as the caller, we hand back the result,
+ * and it writes the answer from that. The part that matters for safety is in
+ * chat.tools.ts — every tool runs as the person chatting.
  */
+
+/** The free-tier workhorse. Swap for gemini-2.5-pro if answers need more depth. */
+const MODEL = 'gemini-2.5-flash';
 
 /**
- * Built once. The client holds a connection pool, so constructing one per
- * request would open a new TLS connection each time.
+ * How many times we will run tools and ask again within one message.
+ *
+ * Without a ceiling a model that keeps requesting tools loops forever, holding
+ * the HTTP request open and burning quota. Four is comfortably above what these
+ * questions need — the deepest real case is two (check the policy, then the
+ * person's balance).
  */
-let client: Anthropic | null = null;
+const MAX_TOOL_ROUNDS = 4;
 
-function getClient(): Anthropic {
-  if (!env.ANTHROPIC_API_KEY) {
+/** Built once — the client pools connections, so per-request construction reconnects each time. */
+let client: GoogleGenAI | null = null;
+
+async function getClient(): Promise<GoogleGenAI> {
+  if (!env.GEMINI_API_KEY) {
     // 503 rather than 500: the server is fine, this one feature is unconfigured.
     // Said plainly so a teammate with no key knows why chat alone is failing.
     throw new AppError(
       503,
       'AI_NOT_CONFIGURED',
-      'The assistant is not configured on this server (ANTHROPIC_API_KEY is not set).',
+      'The assistant is not configured on this server (GEMINI_API_KEY is not set).',
     );
   }
-  client ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  if (!client) {
+    const genai = await import('@google/genai');
+    client = new genai.GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  }
   return client;
 }
 
 export interface ChatResult {
   reply: string;
-  /** Names of tools Claude called, in order — surfaced so the UI can show its work. */
+  /** Names of tools actually called, in order — surfaced so the UI can show its work. */
   toolsUsed: string[];
 }
 
@@ -68,8 +84,8 @@ async function describeCaller(auth: AuthContext): Promise<string> {
 }
 
 function buildSystemPrompt(callerDescription: string): string {
-  // Today's date is included because leave questions are relative ("do I have
-  // enough left this year", "am I off next Friday") and the model has no clock.
+  // Today's date is included because leave questions are relative ("how many do
+  // I have left this year", "am I off next Friday") and the model has no clock.
   const today = new Date().toISOString().slice(0, 10);
 
   return `You are Assistify, the HR assistant for an employee self-service portal.
@@ -95,46 +111,90 @@ cannot apply for leave, approve or reject a request, or edit anyone's details.
 If asked, say the person should use the relevant page in the app.`;
 }
 
+/**
+ * Run one tool and shape its result for the model.
+ *
+ * A thrown tool never fails the whole message. The model is told what went
+ * wrong and can say so or try a different approach, which is far better than
+ * the person seeing a blank error where an answer should be.
+ */
+async function runTool(tool: ChatTool, args: Record<string, unknown>): Promise<Part> {
+  const name = tool.declaration.name as string;
+  try {
+    return { functionResponse: { name, response: { output: await tool.run(args) } } };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error(`🤖 Tool ${name} failed: ${message}`);
+    return { functionResponse: { name, response: { error: message } } };
+  }
+}
+
 export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatResult> {
-  const anthropic = getClient();
-  const system = buildSystemPrompt(await describeCaller(auth));
+  const ai = await getClient();
+  const tools = buildTools(auth);
+  const byName = new Map(tools.map((t) => [t.declaration.name as string, t]));
 
-  const runner = anthropic.beta.messages.toolRunner({
-    model: 'claude-opus-5',
-    // A ceiling, not a target — unused headroom costs nothing, and thinking
-    // shares this budget, so a tight value truncates answers mid-sentence.
-    // Reply length is controlled by the system prompt instead.
-    max_tokens: 16000,
-    // Chat is latency-sensitive and these are lookups, not hard reasoning.
-    // Raise to 'medium' or 'high' if the assistant starts choosing tools badly.
-    output_config: { effort: 'low' },
-    system,
-    tools: buildTools(auth),
-    messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
-  });
+  const systemInstruction = buildSystemPrompt(await describeCaller(auth));
 
-  // Iterating (rather than just awaiting the runner) lets us see each turn as it
-  // completes, so we can record which tools were called. The last message the
-  // runner yields is the final answer — iteration ends when Claude stops calling
-  // tools.
+  // Gemini names the assistant's side of a transcript "model", not "assistant".
+  const contents: Content[] = input.messages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
   const toolsUsed: string[] = [];
-  let finalMessage: Awaited<ReturnType<typeof runner.done>> | undefined;
 
-  for await (const message of runner) {
-    finalMessage = message;
-    for (const block of message.content) {
-      if (block.type === 'tool_use') toolsUsed.push(block.name);
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents,
+      config: {
+        systemInstruction,
+        tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
+      },
+    });
+
+    const calls = response.functionCalls ?? [];
+
+    // No tool requested — this is the answer.
+    if (calls.length === 0) {
+      const reply = response.text?.trim();
+      return {
+        reply: reply || "Sorry — I couldn't put together an answer for that. Try rephrasing?",
+        toolsUsed,
+      };
     }
+
+    // Echo the model's request back into the transcript before answering it;
+    // dropping this turn breaks the pairing between call and response.
+    contents.push({ role: 'model', parts: calls.map((functionCall) => ({ functionCall })) });
+
+    const results = await Promise.all(
+      calls.map(async (call): Promise<Part> => {
+        const tool = byName.get(call.name ?? '');
+        if (!tool) {
+          // Only reachable if the model invents a name. Told, not thrown, so it
+          // can correct itself rather than the message dying.
+          return {
+            functionResponse: {
+              name: call.name ?? 'unknown',
+              response: { error: `No such tool: ${call.name}` },
+            },
+          };
+        }
+        toolsUsed.push(tool.declaration.name as string);
+        return runTool(tool, call.args ?? {});
+      }),
+    );
+
+    contents.push({ role: 'user', parts: results });
   }
 
-  const reply = (finalMessage?.content ?? [])
-    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
-
+  // Still asking for tools after MAX_TOOL_ROUNDS — stop rather than loop.
   return {
-    reply: reply || "Sorry — I couldn't put together an answer for that. Try rephrasing?",
+    reply:
+      "Sorry — I couldn't finish looking that up. Try asking about one thing at a time.",
     toolsUsed,
   };
 }

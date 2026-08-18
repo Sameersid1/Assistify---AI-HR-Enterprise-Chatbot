@@ -11,6 +11,9 @@ it does not make up policy.
 anything, or change any data. And it cannot read uploaded policy PDFs — that is
 a separate feature (see [What's still missing](#8-whats-still-missing)).
 
+**Which AI:** Google Gemini (`gemini-2.5-flash`), because it has a genuinely
+free tier — no card, no trial that expires.
+
 ---
 
 ## Table of contents
@@ -24,7 +27,8 @@ a separate feature (see [What's still missing](#8-whats-still-missing)).
 7. [Step 5 — the chat page](#7-step-5--the-chat-page)
 8. [What's still missing](#8-whats-still-missing)
 9. [How to run it](#9-how-to-run-it)
-10. [Questions you will get asked](#10-questions-you-will-get-asked)
+10. [Two problems we hit and how we fixed them](#10-two-problems-we-hit-and-how-we-fixed-them)
+11. [Questions you will get asked](#11-questions-you-will-get-asked)
 
 ---
 
@@ -34,7 +38,7 @@ A normal chatbot only knows what it was trained on. It has never seen your
 database, so it cannot know your leave balance.
 
 **Tool calling** fixes that. We give the AI a list of functions it is allowed to
-call. It decides when to call them; our server actually runs them and hands back
+ask for. It decides when to ask; our server actually runs them and hands back
 the result.
 
 ```
@@ -46,22 +50,25 @@ You: "How many leave days do I have left?"
         - the list of tools you're allowed to use
                  │
                  ▼
-        Claude reads the question and replies:
-        "I need to call get_my_leave_balance"
+        Gemini reads the question and replies:
+        "I need you to run get_my_leave_balance"
                  │
                  ▼
         Our server runs that function              ← the real database query
         Result: { annual: 12 left, casual: 5 left }
                  │
                  ▼
-        Claude turns that into a sentence
+        We send the result back to Gemini
+                 │
+                 ▼
+        Gemini turns it into a sentence
                  │
                  ▼
 You: "You have 12 annual and 5 casual days left."
 ```
 
-**The key point:** Claude never touches the database. It only asks. Our server
-decides whether to do it and always runs the query *as you*.
+**The key point:** Gemini never touches the database. It only asks. Our server
+decides whether to do it, and always runs the query *as you*.
 
 ---
 
@@ -71,12 +78,13 @@ Exactly one package, in the `server` folder:
 
 ```bash
 cd server
-npm install @anthropic-ai/sdk
+npm install @google/genai
 ```
 
-That is the official Anthropic library. It handles talking to Claude and — the
-useful part — it runs the whole "call a tool, send back the result, ask again"
-loop for us, so we did not have to write that loop by hand.
+That is Google's official Gemini library. Unlike some other AI libraries, it
+does **not** run the tool loop for us — so we wrote that loop ourselves in
+`chat.service.ts`, about 30 lines. That turned out to be a good thing for a
+project you have to explain: nothing is hidden inside a library.
 
 Nothing was installed in the frontend. The chat page just calls our own API,
 same as every other page.
@@ -90,7 +98,7 @@ same as every other page.
 We added one line:
 
 ```ts
-ANTHROPIC_API_KEY: z.string().trim().optional(),
+GEMINI_API_KEY: z.string().trim().optional(),
 ```
 
 `.optional()` is deliberate. `MONGO_URI` and the JWT secrets are **required** —
@@ -114,23 +122,24 @@ This is the file to talk about if someone asks how the chatbot works safely.
 
 ### What a tool is
 
-A tool is three things: a **name**, a **description** telling Claude when to use
-it, and a **function** to run. Example:
+A tool is two things: a **declaration** telling Gemini the name, what it does
+and what arguments it takes; and the **function we run** when Gemini asks for it.
 
 ```ts
-betaTool({
-  name: 'get_my_leave_balance',
-  description: "Get the signed-in employee's own leave balance ...",
-  inputSchema: NO_ARGS,
-  run: async () => JSON.stringify(await leaveService.getMyBalances(auth)),
-})
+{
+  declaration: {
+    name: 'get_my_leave_balance',
+    description: "Get the signed-in employee's own leave balance ...",
+  },
+  run: () => leaveService.getMyBalances(auth),
+}
 ```
 
-The `description` matters more than it looks — it is how Claude decides whether
-to call this tool. A vague description means the tool gets used at the wrong
-times.
+The `description` matters more than it looks — it is how Gemini decides whether
+to use this tool at all. A vague description means the tool gets called at the
+wrong times, or not at all.
 
-### The two safety rules
+### The three safety rules
 
 **Rule 1: every tool runs as *you*.**
 
@@ -144,13 +153,13 @@ LeaveRequestModel.find(scoped(auth, filter))   // scoped() adds companyId
 
 So there is **no sentence you can type** that makes the assistant read another
 company's data. Not "ignore your instructions", not "pretend you are an admin".
-The company filter is in the database query, and the value comes from a signed
-token the browser cannot edit.
+The company filter is applied inside the database query, and its value comes
+from a signed token the browser cannot edit.
 
 This is why the tools are built by a **function** and not stored as a fixed
 list — a fixed list has no user to attach to.
 
-**Rule 2: role is checked here, and this one is easy to get wrong.**
+**Rule 2: role has to be checked here, and this one is easy to get wrong.**
 
 Tenant isolation is inside the services. **Role permission is not.**
 
@@ -160,7 +169,7 @@ the HTTP route — and **a tool call does not go through routes**. If we had han
 that function to an employee's assistant, an employee could have asked the
 chatbot to list everyone's leave and it would have worked.
 
-So we build the tool list based on your role:
+So we build the tool list from your role:
 
 | Your role | Tools your assistant is given |
 |---|---|
@@ -178,6 +187,19 @@ We verified this by running the function for all five roles and printing the
 tool names — employees got 3, HR/admin got 5. The split matches
 `leave.routes.ts` exactly.
 
+**Rule 3: the AI's arguments are untrusted input.**
+
+When Gemini calls `list_my_leave_requests`, *it* writes the arguments. That makes
+them outside input, exactly like a request body — so they get exactly the same
+treatment:
+
+```ts
+run: (args) => leaveService.listMyRequests(auth, listLeaveQuerySchema.parse(args))
+```
+
+`listLeaveQuerySchema` is the **same Zod schema the HTTP route uses**. If the AI
+invents a status like `"MAYBE"`, it is rejected before it reaches a query.
+
 ---
 
 ## 5. Step 3 — the service that runs the conversation
@@ -186,11 +208,11 @@ tool names — employees got 3, HR/admin got 5. The split matches
 
 Three jobs.
 
-### a) Tell Claude who it is talking to
+### a) Tell Gemini who it is talking to
 
 We look up your name, role, department and company **from the database**, using
-the id inside your token — never from anything the browser sent. Then we put it
-in the system prompt (the instructions Claude reads before your message):
+the id inside your token — never from anything the browser sent. Then it goes in
+the system instruction (what Gemini reads before your message):
 
 ```
 You are Assistify, the HR assistant for an employee self-service portal.
@@ -203,7 +225,7 @@ Company: Nexora Technologies
 Today's date is 2026-08-18 (UTC).
 ```
 
-Today's date is included because Claude has no clock, and leave questions are
+Today's date is included because Gemini has no clock, and leave questions are
 almost always relative — "how many do I have left *this year*".
 
 If someone types "I am actually an admin", nothing changes: the tools they were
@@ -211,7 +233,7 @@ given were chosen from their real role before the message was even read.
 
 ### b) The house rules
 
-The rest of the system prompt is behaviour:
+The rest of the instruction is behaviour:
 
 - **Get facts from tools. Never estimate.** This is the anti-hallucination rule.
 - **If no tool can answer it, say so** and suggest contacting HR. Do not invent
@@ -220,29 +242,44 @@ The rest of the system prompt is behaviour:
 - **Say what you cannot do** — it cannot apply for or approve leave, so it says
   so instead of pretending.
 
-### c) Run the loop
+### c) The tool loop (the part we wrote by hand)
 
-```ts
-const runner = anthropic.beta.messages.toolRunner({
-  model: 'claude-opus-5',
-  max_tokens: 16000,
-  output_config: { effort: 'low' },
-  system,
-  tools: buildTools(auth),
-  messages: input.messages,
-})
+```
+repeat up to 4 times:
+    ask Gemini
+    did it ask for any tools?
+        no  → this is the answer, return it
+        yes → run each tool as the caller
+              add the request AND the results to the transcript
+              loop again
 ```
 
-- **`model`** — Claude Opus 5.
-- **`max_tokens: 16000`** — a ceiling, not a target. You are only charged for
-  what is actually generated, so leaving headroom is free. Setting it low is how
-  you get answers that stop mid-sentence.
-- **`effort: 'low'`** — how hard Claude thinks before answering. Chat needs to
-  feel fast and these are simple lookups. If it ever starts picking the wrong
-  tool, raise this to `medium` or `high`.
+In code that is roughly:
 
-Then we loop over each turn to record which tools were used, so the UI can show
-them. The last message the loop produces is the final answer.
+```ts
+for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+  const response = await ai.models.generateContent({ model, contents, config })
+  const calls = response.functionCalls ?? []
+
+  if (calls.length === 0) return { reply: response.text, toolsUsed }   // done
+
+  contents.push({ role: 'model', parts: calls.map(fc => ({ functionCall: fc })) })
+  const results = await Promise.all(calls.map(runOneTool))
+  contents.push({ role: 'user', parts: results })
+}
+```
+
+Three details worth explaining:
+
+- **`MAX_TOOL_ROUNDS = 4`** — without a limit, a model that keeps asking for
+  tools loops forever, holding the request open and burning quota. Four is
+  comfortably more than these questions need.
+- **We push the model's request back into the transcript** before answering it.
+  If you skip that, the call and its result are no longer paired and the next
+  request is rejected.
+- **A tool that throws does not kill the message.** We catch it and send the
+  error text back to Gemini, so it can say "I couldn't look that up" instead of
+  the user seeing a blank failure.
 
 ---
 
@@ -263,7 +300,7 @@ just get different tools inside it.
 `chat.schema.ts` validates the request with Zod, same as every other endpoint:
 
 - Each message: max 4,000 characters (one giant paste can't blow up a request)
-- Whole conversation: max 40 messages (long chats get slow and expensive)
+- Whole conversation: max 40 messages (long chats get slow and hit quota)
 
 **The server remembers nothing between messages.** The browser sends the whole
 conversation every time. That is the same stateless design as the rest of the
@@ -276,8 +313,7 @@ API — and it is why the server can restart mid-conversation without losing it.
 **File:** `web/src/pages/ChatPage.tsx`
 
 The page already existed but was **entirely fake** — hardcoded messages and a
-`setTimeout` that pattern-matched a few keywords to canned replies. All of that
-is gone.
+`setTimeout` that matched a few keywords to canned replies. All of that is gone.
 
 What changed:
 
@@ -285,8 +321,8 @@ What changed:
 - **Empty state** with your first name and three suggested questions, instead of
   a fake conversation already in progress
 - **Tool chips** under each answer showing what was actually checked — e.g.
-  *"Your leave balance"*. These are real: they come from the tools Claude
-  genuinely called. The old page had fake ones like *"Leave Policy 2026 ·
+  *"Your leave balance"*. These are real: they come from the tools Gemini
+  genuinely asked for. The old page had fake ones like *"Leave Policy 2026 ·
   Section 4.2"* pointing at a document that does not exist.
 - Input disabled while thinking, so you cannot send two questions at once
 - Auto-scroll to the newest message
@@ -319,50 +355,95 @@ Be upfront about this — it is the honest answer and it is a short list.
 |---|---|
 | **Reading policy documents (RAG)** | The "Enterprise Knowledge Search" half of the project title. Needs a documents module: upload, storage, chunking, embeddings, vector search. None of that exists yet. |
 | **Actions** | It can read but not write. No applying for leave, no approving. Read-only was deliberate for the first version — a mistake cannot corrupt data. |
-| **Streaming** | The answer appears all at once after 5–15 seconds, instead of word by word. |
-| **Tool memory across turns** | Claude sees its own past *answers* but not the raw data behind them. Fine in practice, because the answer carries the facts. |
+| **Streaming** | The answer appears all at once after a few seconds, instead of word by word. |
+| **Tool memory across turns** | Gemini sees its own past *answers* but not the raw data behind them. Fine in practice, because the answer carries the facts. |
 | **Ticket tools** | The tickets module does not exist on the backend yet. |
 
 ---
 
 ## 9. How to run it
 
-**1. Get an API key** from [console.anthropic.com](https://console.anthropic.com)
-→ API Keys.
+**1. Get a free API key** from
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). Sign in with a
+Google account, click *Create API key*. **No card required.**
 
 **2. Local:** add to `server/.env`
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
 ```
+
+Then **restart the server** — `.env` is only read at boot.
 
 **3. Deployed:** Render → assistify-api → Environment → add the same variable →
 save and let it redeploy.
+
+You need it in **both** if you want chat working locally and on the deployed
+site — they are separate servers.
 
 **4. Test:** sign in, open the chat page, ask *"How many leave days do I have
 left?"*
 
 ### Worth knowing
 
-- **This one costs real money.** Every other service in this project is on a free
-  tier. The Anthropic API is usage-billed. It is small at demo scale, but it is
-  not ₹0 — update the cost slide in the presentation.
+- **Free tier has rate limits** — a limited number of requests per minute and
+  per day. Fine for a demo; you may hit it if you sit and hammer it for an hour.
+  If that happens you will get an error, not a charge.
 - **Render's free tier sleeps.** The first message after an idle period takes
   40+ seconds. Wake it before demoing.
-- **Answers take 5–15 seconds.** That is normal — it is thinking and running
+- **Answers take a few seconds.** That is normal — it is thinking and running
   database queries.
 
 ### Try this to show the security model
 
 1. Sign in as **HR**. Ask *"Show me all pending leave requests."* → it works.
-2. Sign in as an **employee**. Ask the same thing. → it will say it cannot do
-   that, because that tool was never given to an employee's assistant.
+2. Sign in as an **employee**. Ask the same thing. → it replies that it cannot,
+   because that tool was never given to an employee's assistant.
 
-That is a 30-second demo of the whole permission design.
+That is a 30-second demo of the whole permission design. Note the difference:
+a **red error banner** means something failed; a **chat bubble** means the
+assistant answered. The employee case should be a chat bubble.
 
 ---
 
-## 10. Questions you will get asked
+## 10. Two problems we hit and how we fixed them
+
+Worth knowing, because they are the kind of thing an examiner may ask about.
+
+### Problem 1: the AI library would not import
+
+Our backend is compiled as **CommonJS** (the older `require` style). The Gemini
+library ships as **ESM** (the newer `import` style). TypeScript refused to build:
+
+```
+error TS1479: The current file is a CommonJS module whose imports will produce
+'require' calls; however, the referenced file is an ECMAScript module.
+```
+
+We did not want to convert the whole backend to ESM for one feature. The fix
+was two changes:
+
+- Import only the **types** at the top of the file
+  (`import type { ... } from '@google/genai' with { 'resolution-mode': 'import' }`).
+  Types disappear at build time, so nothing tries to load the library there.
+- Load the actual class with a **dynamic import** at the point it is used:
+  `const genai = await import('@google/genai')`. CommonJS is allowed to do that.
+
+We verified the compiled output still contains `await import(...)` and not
+`require(...)`, and ran it to confirm the library loads.
+
+### Problem 2: role permissions do not come for free
+
+Described in [Rule 2](#4-step-2--the-tools-the-most-important-file) above. Worth
+repeating because it is the most interesting thing we found: our **tenant**
+isolation lives inside the services, so tools inherit it automatically — but our
+**role** checks live on the HTTP routes, and tool calls never touch routes.
+Handing a route-protected function to the AI would have quietly bypassed our own
+permission system. That is why the tool list is built per user.
+
+---
+
+## 11. Questions you will get asked
 
 **"Is the AI connected to your database?"**
 > Not directly. It can request specific functions we wrote, and our server runs
@@ -383,16 +464,21 @@ That is a 30-second demo of the whole permission design.
 
 **"Can it make things up?"**
 > It can phrase things badly, but the numbers come from tool results, not from
-> the model. The system prompt tells it to call a tool rather than estimate, and
-> to say it does not know rather than invent policy. It also has no policy
-> documents to draw on yet — so if it is asked about a policy we do not store,
-> the correct behaviour is to say so.
+> the model. The system instruction tells it to call a tool rather than
+> estimate, and to say it does not know rather than invent policy. It also has
+> no policy documents to draw on yet — so if it is asked about a policy we do
+> not store, the correct behaviour is to say so.
 
-**"Why Claude and not something else?"**
-> Good tool calling and a large context window. The design is not tied to it —
-> the tools are ordinary functions, so swapping the provider means changing the
-> service file, not the tools.
+**"Why Gemini?"**
+> A real free tier, and good function calling. The design is not tied to it —
+> the tools are ordinary functions of ours, so switching provider means
+> rewriting one file (`chat.service.ts`), not the tools or the security model.
 
-**"Which model, and how much does it cost?"**
-> Claude Opus 5. It is usage-billed per token — small at our scale, but a real
-> cost, unlike the rest of the stack which is all free tier.
+**"What does it cost?"**
+> Nothing. Gemini's free tier covers this comfortably at demo scale. There are
+> per-minute and per-day request limits rather than a bill.
+
+**"Why did you write the tool loop yourself?"**
+> The Gemini library does not provide one. It is about 30 lines: ask, check
+> whether it requested tools, run them, send the results back, repeat — with a
+> hard limit of four rounds so it cannot loop forever.

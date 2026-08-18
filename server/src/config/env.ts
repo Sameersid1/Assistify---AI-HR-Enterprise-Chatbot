@@ -52,10 +52,11 @@ const envSchema = z.object({
   BREVO_API_KEY: z.string().trim().optional(),
 
   // ── Assistant ──────────────────────────────────────────────────────────────
+  // Google AI Studio key (aistudio.google.com/apikey), which has a free tier.
   // Optional so a fresh clone still boots: without it every other feature works
   // and only POST /chat refuses, with a message saying why. Unlike the database
   // and JWT secrets, an unset key here is a missing feature, not a broken server.
-  ANTHROPIC_API_KEY: z.string().trim().optional(),
+  GEMINI_API_KEY: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
