@@ -25,6 +25,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_company_leave_policy: "Company leave policy",
   list_company_leave_requests: "Company leave requests",
   list_employees: "Employee directory",
+  search_company_policies: "Company policy documents",
   apply_for_leave: "Submitted a leave request",
   cancel_my_leave_request: "Cancelled a leave request",
 }

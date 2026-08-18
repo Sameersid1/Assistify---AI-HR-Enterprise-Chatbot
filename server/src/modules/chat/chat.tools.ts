@@ -5,6 +5,7 @@ import type { FunctionDeclaration } from '@google/genai' with { 'resolution-mode
 import { CompanyModel } from '../companies/company.model';
 import * as leaveService from '../leave/leave.service';
 import * as userService from '../users/user.service';
+import * as documentService from '../documents/document.service';
 import { applyLeaveSchema, listLeaveQuerySchema } from '../leave/leave.schema';
 import { toObjectId } from '../../shared/objectId';
 import type { AuthContext, Role } from '../../shared/types';
@@ -131,6 +132,49 @@ function selfServiceTools(auth: AuthContext): ChatTool[] {
             casual: company.leavePolicy.casual,
             sick: company.leavePolicy.sick,
           },
+        };
+      },
+    },
+
+    {
+      declaration: {
+        name: 'search_company_policies',
+        description:
+          "Search the company's uploaded policy documents and return the most " +
+          'relevant passages, each with the document title it came from. Call ' +
+          'this for any question about rules, entitlements, procedures or ' +
+          'conditions that is not simply a number from the leave records — ' +
+          'maternity leave, notice periods, remote work, expenses, conduct, ' +
+          'benefits. Search with the words the person used. An empty result ' +
+          'means nothing in the corpus covers it, which is worth saying: it is ' +
+          'not an invitation to answer from general knowledge.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: "The question or topic, in the person's own words",
+            },
+          },
+          required: ['query'],
+        },
+      },
+      run: async (args) => {
+        const hits = await documentService.searchDocuments(auth, String(args.query ?? ''));
+        if (hits.length === 0) {
+          // Said explicitly rather than returned as an empty array, because an
+          // empty result reads as "the tool failed" and invites a guess.
+          return {
+            found: false,
+            note: 'No policy document covers this. Say so — do not answer from general knowledge.',
+          };
+        }
+        return {
+          found: true,
+          passages: hits.map((h) => ({
+            source: h.documentTitle,
+            passage: h.text,
+          })),
         };
       },
     },

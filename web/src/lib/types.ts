@@ -158,6 +158,24 @@ export interface ApplyLeaveResponse {
   balance: LeaveBalance
 }
 
+/* ── Policy documents ───────────────────────────────────────────────────── */
+
+export interface CompanyDocument {
+  id: string
+  title: string
+  /** How many passages it was split into for retrieval. */
+  chunkCount: number
+  createdAt: string
+}
+
+export interface DocumentSearchHit {
+  documentTitle: string
+  chunkIndex: number
+  text: string
+  /** Cosine similarity, 0–1. Anything below the server's floor is not returned. */
+  similarity: number
+}
+
 /* ── Assistant ──────────────────────────────────────────────────────────── */
 
 /** One turn of the transcript. The server is stateless — send the whole thing. */
