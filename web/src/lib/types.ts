@@ -102,6 +102,62 @@ export interface InviteResponse {
   emailError?: string
 }
 
+/* ── Leave ──────────────────────────────────────────────────────────────── */
+
+/** The three types the company policy defines (server: leave.model.ts). */
+export const LEAVE_TYPES = ['annual', 'casual', 'sick'] as const
+export type LeaveType = (typeof LEAVE_TYPES)[number]
+
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
+  annual: 'Annual Leave',
+  casual: 'Casual Leave',
+  sick: 'Sick Leave',
+}
+
+export interface LeaveBalance {
+  type: LeaveType
+  year: number
+  allocated: number
+  used: number
+  /** Days reserved by requests still awaiting a decision. */
+  pending: number
+  /** allocated − used − pending. What you can actually still book. */
+  available: number
+}
+
+export interface LeaveRequest {
+  id: string
+  type: LeaveType
+  /** `YYYY-MM-DD`. A calendar date, not an instant. */
+  fromDate: string
+  toDate: string
+  /** Working days, computed server-side — never sent by the client. */
+  days: number
+  reason: string
+  status: LeaveStatus
+  decisionNote: string | null
+  decidedAt: string | null
+  createdAt: string
+  /** Present only on the HR queue, where the request belongs to someone else. */
+  employee?: { id: string; fullName: string; email: string; department: string | null }
+}
+
+/** POST /leave/requests — `days` is deliberately absent; the server computes it. */
+export interface ApplyLeaveRequest {
+  type: LeaveType
+  fromDate: string
+  toDate: string
+  reason: string
+}
+
+export interface ApplyLeaveResponse {
+  request: LeaveRequest
+  /** The balance after the days were reserved, so the UI need not refetch. */
+  balance: LeaveBalance
+}
+
 /* ── Assistant ──────────────────────────────────────────────────────────── */
 
 /** One turn of the transcript. The server is stateless — send the whole thing. */
