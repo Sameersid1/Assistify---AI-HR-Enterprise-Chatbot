@@ -15,8 +15,9 @@ below. Follow these rules on every request:
    say `[AUTHOR: need X]` rather than inventing it. Do not invent accuracy
    figures, user counts, benchmark scores, survey results, or citations.
 2. **Never claim an unbuilt feature.** Part 6 lists exactly what does not exist.
-   Retrieval-augmented generation over policy documents is **not implemented**.
-   Do not describe it as working. It may only appear under Future Work.
+   Retrieval over policy documents **is** implemented (Part 3.11) — but it has
+   **not been evaluated**, so describe the mechanism and say nothing about its
+   accuracy until the author supplies measurements.
 3. **This is an applications/systems paper, not a novel-algorithm paper.** Frame
    the contribution as architecture and security design. Do not claim a new
    algorithm, a new model, or state-of-the-art performance.
@@ -129,14 +130,15 @@ modules/<feature>/
   <feature>.model.ts        Mongoose schema + indexes
 ```
 
-Modules implemented: `auth`, `users`, `companies`, `leave`, `chat`, `health`.
+Modules implemented: `auth`, `users`, `companies`, `leave`, `chat`, `documents`,
+`health`.
 
 **Invariant:** controllers never touch the database; services never touch
 `req`/`res`. This is what makes services reusable as LLM tools *and* as CLI
 scripts — the same function serves an HTTP route, a terminal admin script, and
 a tool invocation.
 
-### 3.4 Data model (4 collections)
+### 3.4 Data model (6 collections)
 
 | Collection | Purpose | Key fields |
 |---|---|---|
@@ -144,6 +146,8 @@ a tool invocation.
 | `users` | authentication and employment profile merged | `companyId`, `email`, `fullName`, `role`, `status`, `passwordHash`, `invitationTokenHash`, `refreshTokenHashes[]` |
 | `leaveBalances` | one row per (user, year, type) | `allocated`, `used`, `pending` |
 | `leaveRequests` | request plus state machine | `type`, `fromDate`, `toDate`, `days`, `reason`, `status`, `decidedBy` |
+| `documents` | uploaded policy text per tenant | `companyId`, `title`, `content`, `chunkCount`, `uploadedBy` |
+| `documentChunks` | one embedded passage | `companyId`, `documentId`, `chunkIndex`, `text`, `embedding[]` |
 
 **Indexes:**
 ```
@@ -370,8 +374,11 @@ open and exhausting API quota.
 | `get_company_leave_policy` | company entitlement | all roles |
 | `list_company_leave_requests` | all employees' requests | hr, admin, super_admin |
 | `list_employees` | employee directory | hr, admin, super_admin |
+| `search_company_policies` | retrieved policy passages | all roles |
+| `apply_for_leave` | **writes** a leave request | all roles |
+| `cancel_my_leave_request` | **writes** — withdraws own pending request | all roles |
 
-Employees and IT Support receive 3 tools; HR, admin and super_admin receive 5.
+Employees and IT Support receive 6 tools; HR, admin and super_admin receive 8.
 This partition mirrors the route-level `requireRole` guard exactly.
 
 **Three security properties (this is the paper's technical core):**
@@ -405,6 +412,71 @@ rather than collapsing into a generic 500. Justification for the paper:
 diagnosability. An undifferentiated error is indistinguishable from a defect in
 the application itself.
 
+### 3.11 Retrieval over policy documents
+
+Structured records answer "how many days do I have left". They cannot answer
+"what is the maternity leave policy", because that text lives in documents, not
+columns. Retrieval closes that gap and is what allows the assistant to cite a
+source rather than recall one.
+
+**Pipeline:**
+1. **Ingestion.** A document is submitted as text with a title. Extraction from
+   the original file format happens in the browser, so the API accepts text only
+   and carries no binary parsing dependency.
+2. **Chunking.** Text is split on paragraph boundaries into passages targeting
+   1200 characters, with 200 characters of overlap carried from the previous
+   passage. Overlap exists because a sentence answering a question may straddle
+   a split; without it that sentence belongs wholly to neither passage and ranks
+   poorly in both. A single paragraph exceeding twice the target is hard-split.
+3. **Embedding.** Each passage is embedded once at upload using
+   `text-embedding-004` with `taskType: RETRIEVAL_DOCUMENT` and
+   `outputDimensionality: 256`.
+4. **Query.** The question is embedded with `taskType: RETRIEVAL_QUERY`.
+5. **Ranking.** Cosine similarity between the query vector and every passage
+   vector belonging to the caller's tenant; top-k (k=4) above a similarity floor
+   of 0.5 is returned.
+
+**Design decisions worth defending in the paper:**
+
+*Asymmetric embeddings.* Documents and queries are embedded under different task
+types. A question and its answer are not paraphrases of one another — "how much
+maternity leave do I get" and "employees are entitled to 26 weeks of paid
+maternity leave" share few words. Task-typed embeddings are trained for exactly
+this asymmetry.
+
+*Dimensionality reduction to 256.* The model produces Matryoshka embeddings, in
+which leading dimensions carry the most signal. Truncating trades a small amount
+of accuracy for a quarter of the storage and a quarter of the arithmetic per
+comparison.
+
+*Application-level similarity, not a vector database.* Similarity is computed in
+the application over arrays stored in MongoDB. At a few hundred passages a
+linear scan is microseconds, requires no vector index, and remains within the
+free database tier. **Argue this explicitly:** adopting a vector store at this
+corpus size would be machinery without a matching problem. State the crossover
+honestly — at tens of thousands of passages an approximate-nearest-neighbour
+index becomes necessary.
+
+*A similarity floor is a correctness mechanism, not an optimisation.* Cosine
+ranking always returns an ordering, including for questions the corpus says
+nothing about. Without a floor the assistant would cite the nearest unrelated
+paragraph with full confidence. The floor is what makes "the company has not
+published a policy covering that" reachable.
+
+*Empty results are returned as an explicit statement, not an empty array.* A
+bare empty array reads to the model as a failed call and invites it to answer
+from general knowledge; an explicit "nothing covers this, say so" does not.
+
+**Tenant isolation in retrieval.** The passage query is filtered by `companyId`
+*before* ranking. One tenant's policies can therefore never surface in another
+tenant's answer, regardless of how the question is phrased — the same property
+as the structured tools, obtained the same way.
+
+**Authorization.** Uploading and deleting are restricted to HR and
+administrators, mirroring the guard on staff invitation. Reading is not
+restricted: a policy exists to be read by everyone it binds, so the retrieval
+tool is available to every role.
+
 ### 3.10 API design
 
 Uniform response envelope:
@@ -435,7 +507,10 @@ the URL is preferred to a single endpoint branching on a target state.
 - Five-role RBAC enforced at route and service layers, 403s verified
 - Multi-tenant isolation via JWT-derived `companyId`
 - Leave: apply, approve, reject, cancel, with atomic balance handling
-- LLM assistant with 5 role-gated tools, deployed and answering from live data
+- LLM assistant with role-gated tools (6 for employee/IT support, 8 for HR and
+  admin), deployed and answering from live data; both read and write tools
+- Retrieval over uploaded policy documents: chunking, embedding, cosine ranking
+  with a similarity floor, tenant-filtered
 - Transactional email delivery over HTTPS
 - Deployed to production on Render + Vercel + MongoDB Atlas
 
@@ -498,6 +573,22 @@ Record and report means over ≥20 samples: login, leave application, assistant
 response without a tool call, assistant response with a tool call. Note that a
 tool-calling turn requires ≥2 model round trips.
 
+### 5.7 Retrieval quality — RUN THIS, retrieval is now implemented
+
+Upload 3–5 real policy documents. Write 20 questions whose answers you know are
+in them, plus 5 whose answers are definitely not.
+
+For each, record: whether the correct passage appeared in the top-4, its rank,
+and whether the assistant's final answer was faithful to the retrieved text.
+
+Report: **recall@4 (%)**, **mean reciprocal rank**, **rejection rate on the 5
+out-of-corpus questions** (should be high — that is the similarity floor
+working), and **groundedness** (answers containing no claim absent from the
+retrieved passages).
+
+Also worth reporting: retrieval is deterministic given a fixed corpus, so unlike
+generation these numbers are reproducible.
+
 ### 5.6 What you must NOT report
 
 No user study, no satisfaction scores, no "reduced HR workload by X%", no
@@ -510,8 +601,9 @@ any of these.
 
 | Not built | Consequence for the paper |
 |---|---|
-| **Retrieval-augmented generation over policy documents** | The assistant answers from structured database records only. It cannot answer free-text policy questions. **Do not describe RAG as working.** |
-| Write actions via the assistant | Read-only; it cannot apply for or approve leave |
+| **Retrieval evaluation** | Retrieval itself is implemented (Part 3.11), but no retrieval quality measurement has been run — no precision@k, no recall, no answer-groundedness study. Describe the mechanism; claim no accuracy figure. |
+| Approve/reject via the assistant | Deliberate. The assistant can apply for and cancel the caller's own leave, but deciding another person's request stays on the approvals page |
+| PDF/DOCX parsing on the server | Text extraction happens in the browser, which reads plain-text formats only; other formats are pasted in as text |
 | IT ticketing module | No backend implementation |
 | HR analytics dashboard | Not built |
 | Automated test suite | Verification was manual and script-assisted |
@@ -679,13 +771,13 @@ reviewers respond well to a concrete, specific finding honestly reported.
 generalizes beyond your project: any team layering an LLM onto an existing
 application faces it. Lead with it, and make Section V the centre of the paper.
 
-**Your biggest risk is overclaiming.** The project title says "AI-Powered HR
-Assistant with Enterprise Knowledge Search". Knowledge search over documents is
-**not built**. If the paper implies otherwise and a reviewer asks for the
-retrieval evaluation, the paper fails. Either build it before submitting, or
-retitle around what exists — for example *"Authorization-Preserving LLM Tool
-Calling in a Multi-Tenant HR System"*, which describes what you actually did and
-is a better paper than a vague one.
+**Your biggest risk is now the retrieval evaluation, not the retrieval itself.**
+Document search is built (Part 3.11), so the title is honest. But a reviewer who
+sees a retrieval pipeline will ask how well it retrieves, and you have not
+measured that. Either run the evaluation in Part 5.7 or state plainly in
+Limitations that retrieval quality is unmeasured. Describing the mechanism
+without claiming a number is defensible; implying accuracy you never measured is
+not.
 
 **Do the Part 5.3 experiment.** Fifteen adversarial prompts against an employee
 account, zero successful escalations, with the architectural explanation of why.

@@ -178,6 +178,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           badgeVariant: "active",
         },
         {
+          // Admin is a publisher role on the documents API, so it needs the
+          // page that uploads them.
+          label: "Company Policies",
+          icon: FileText,
+          href: "/app/documents",
+          roles: ["admin"],
+        },
+        {
           label: "System Settings",
           icon: Settings,
           href: "/app/settings",

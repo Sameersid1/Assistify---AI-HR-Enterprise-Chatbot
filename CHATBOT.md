@@ -7,9 +7,12 @@ re-reading the code. Written in the order it was built.
 answers using your *real* leave records from the database. It does not guess and
 it does not make up policy.
 
-**What it does not do yet:** it can only read. It cannot apply for leave, approve
-anything, or change any data. And it cannot read uploaded policy PDFs — that is
-a separate feature (see [What's still missing](#8-whats-still-missing)).
+**What it can also do now:** apply for leave and cancel a pending request on
+your behalf, and answer policy questions from documents HR has uploaded, citing
+the document it used.
+
+**What it still cannot do:** approve or reject anyone else's leave — that stays
+on the approvals page on purpose (see [What's still missing](#8-whats-still-missing)).
 
 **Which AI:** Google Gemini (`gemini-2.5-flash`), because it has a genuinely
 free tier — no card, no trial that expires.
@@ -353,8 +356,9 @@ Be upfront about this — it is the honest answer and it is a short list.
 
 | Missing | Why it matters |
 |---|---|
-| **Reading policy documents (RAG)** | The "Enterprise Knowledge Search" half of the project title. Needs a documents module: upload, storage, chunking, embeddings, vector search. None of that exists yet. |
-| **Actions** | It can read but not write. No applying for leave, no approving. Read-only was deliberate for the first version — a mistake cannot corrupt data. |
+| **Approving via chat** | Deliberate, not missing. Deciding someone else's leave changes their balance and is recorded against you, so it belongs on the approvals page where the request is on screen. Applying and cancelling your own leave is reversible, which is why those are allowed. |
+| **PDF parsing on the server** | Text is extracted in the browser, which reads .txt/.md/.csv natively. For a PDF you open it, copy the text and paste it in. |
+| **Retrieval quality measurement** | Search works but we have not measured how often it finds the right passage. |
 | **Streaming** | The answer appears all at once after a few seconds, instead of word by word. |
 | **Tool memory across turns** | Gemini sees its own past *answers* but not the raw data behind them. Fine in practice, because the answer carries the facts. |
 | **Ticket tools** | The tickets module does not exist on the backend yet. |
