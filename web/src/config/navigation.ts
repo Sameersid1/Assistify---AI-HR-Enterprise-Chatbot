@@ -99,6 +99,17 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           roles: ["hr"],
         },
         {
+          // Every role gets the assistant; the tools inside it differ by role
+          // (chat.tools.ts). HR's version can also read the company-wide leave
+          // queue and the employee directory.
+          label: "HR Assistant Chat",
+          icon: MessageSquare,
+          href: "/app/chat",
+          roles: ["hr"],
+          badge: "AI",
+          badgeVariant: "active",
+        },
+        {
           label: "Leave Approvals",
           icon: CalendarCheck,
           href: "/app/leave-approvals",
@@ -151,6 +162,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           roles: ["admin"],
         },
         {
+          label: "HR Assistant Chat",
+          icon: MessageSquare,
+          href: "/app/chat",
+          roles: ["admin"],
+          badge: "AI",
+          badgeVariant: "active",
+        },
+        {
           label: "User Management",
           icon: UserCog,
           href: "/app/users",
@@ -177,6 +196,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           icon: LayoutDashboard,
           href: "/app",
           roles: ["it_support"],
+        },
+        {
+          label: "HR Assistant Chat",
+          icon: MessageSquare,
+          href: "/app/chat",
+          roles: ["it_support"],
+          badge: "AI",
+          badgeVariant: "active",
         },
         {
           label: "IT Tickets",
