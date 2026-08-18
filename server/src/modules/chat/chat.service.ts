@@ -137,6 +137,57 @@ If asked, say the person should use the relevant page in the app.`;
 }
 
 /**
+ * Turn a failure from the Gemini API into something the person can act on.
+ *
+ * Without this every upstream problem — rate limit, rejected key, Google having
+ * a bad afternoon — arrives as an unhandled throw and the UI shows "Something
+ * went wrong", which is indistinguishable from a bug in our own code. The
+ * status is the useful part: it separates "wait a minute" from "the key is
+ * wrong" from "not your fault at all", and those need different reactions.
+ *
+ * The upstream text is passed through deliberately. Google's messages name the
+ * problem ("API key not valid", "quota exceeded") and contain no secret; hiding
+ * them is what made the SMTP failure take a day to diagnose.
+ */
+function describeAiError(err: unknown): AppError {
+  // Duck-typed rather than instanceof: the SDK's ApiError class lives in an ESM
+  // module this CommonJS file only imports types from.
+  const status = typeof (err as { status?: unknown })?.status === 'number'
+    ? (err as { status: number }).status
+    : undefined;
+  const detail = err instanceof Error ? err.message : String(err);
+
+  // eslint-disable-next-line no-console
+  console.error(`🤖 Gemini request failed (status ${status ?? 'unknown'}): ${detail}`);
+
+  if (status === 429) {
+    return new AppError(
+      429,
+      'AI_RATE_LIMITED',
+      'The assistant has hit its free-tier limit for now. Wait a minute and try again.',
+    );
+  }
+  if (status === 401 || status === 403) {
+    return new AppError(
+      503,
+      'AI_KEY_REJECTED',
+      `The assistant's API key was rejected by Google. Check GEMINI_API_KEY. (${detail})`,
+    );
+  }
+  if (status === 400) {
+    return new AppError(400, 'AI_BAD_REQUEST', `The assistant rejected that request. (${detail})`);
+  }
+  if (status !== undefined && status >= 500) {
+    return new AppError(
+      503,
+      'AI_UNAVAILABLE',
+      'Google’s AI service is temporarily unavailable. Try again shortly.',
+    );
+  }
+  return new AppError(502, 'AI_REQUEST_FAILED', `The assistant could not be reached. (${detail})`);
+}
+
+/**
  * Run one tool and shape its result for the model.
  *
  * A thrown tool never fails the whole message. The model is told what went
@@ -171,14 +222,19 @@ export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatRes
   const toolsUsed: string[] = [];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
-      },
-    });
+    let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
+    try {
+      response = await ai.models.generateContent({
+        model: MODEL,
+        contents,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
+        },
+      });
+    } catch (err) {
+      throw describeAiError(err);
+    }
 
     const calls = response.functionCalls ?? [];
 
