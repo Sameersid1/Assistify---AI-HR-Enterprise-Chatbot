@@ -14,6 +14,17 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5050/api/v1'
 const ACCESS_KEY = 'assistify.accessToken'
 const REFRESH_KEY = 'assistify.refreshToken'
 
+/**
+ * Exported so AuthContext can watch for another tab replacing the session.
+ *
+ * localStorage is shared across every tab on this origin, so signing in as a
+ * second person anywhere overwrites the token here too — while this tab carries
+ * on rendering the first person from React state. Requests then go out as
+ * whoever logged in last, and the mismatch is invisible until something writes
+ * data under the wrong name.
+ */
+export const TOKEN_STORAGE_KEYS = [ACCESS_KEY, REFRESH_KEY] as const
+
 /* ── token storage ─────────────────────────────────────────────── */
 
 export const tokenStore = {

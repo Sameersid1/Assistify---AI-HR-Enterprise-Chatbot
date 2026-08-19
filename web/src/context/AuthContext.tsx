@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { api, ApiError, tokenStore } from "@/lib/api"
+import { api, ApiError, tokenStore, TOKEN_STORAGE_KEYS } from "@/lib/api"
 import { toUser, type LoginResponse, type MeResponse, type User, type UserRole } from "@/lib/types"
 
 /**
@@ -72,6 +72,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       cancelled = true
     }
+  }, [])
+
+  /**
+   * Follow the session when another tab changes it.
+   *
+   * The token lives in localStorage, which every tab on this origin shares.
+   * Signing in as someone else anywhere replaces it here too, and without this
+   * the tab keeps rendering the previous person while sending requests as the
+   * new one — so the page greets you by one name and the server answers as
+   * another, and anything you submit is written under the wrong account.
+   *
+   * The `storage` event only fires in the *other* tabs, which is exactly the
+   * ones that are now stale. Re-asking the server who we are is the only
+   * trustworthy answer; a token we could decode client-side would still be the
+   * new person's.
+   */
+  useEffect(() => {
+    async function resync(event: StorageEvent) {
+      // key is null when storage was cleared wholesale.
+      if (event.key !== null && !TOKEN_STORAGE_KEYS.includes(event.key as never)) return
+
+      if (!tokenStore.access) {
+        setUser(null)
+        return
+      }
+      try {
+        const { user: apiUser } = await api.get<MeResponse>("/auth/me")
+        setUser(toUser(apiUser))
+      } catch {
+        tokenStore.clear()
+        setUser(null)
+      }
+    }
+
+    window.addEventListener("storage", resync)
+    return () => window.removeEventListener("storage", resync)
   }, [])
 
   const login = useCallback(
