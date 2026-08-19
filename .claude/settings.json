@@ -45,7 +45,8 @@
       "PowerShell(Set-Location \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify\\\\server\"; $l = Get-Content src\\\\modules\\\\users\\\\user.service.ts; $i = \\($l | Select-String \"emailSent:\" | Select-Object -Last 1\\).LineNumber; $l[\\($i-16\\)..\\($i+6\\)] | ForEach-Object -Begin {$n=$i-15} -Process { \"$n`: $_\"; $n++ })",
       "PowerShell(Set-Location \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify\\\\server\"; Select-String -Path src\\\\modules\\\\users\\\\user.service.ts -Pattern \"emailPreviewUrl\\\\?: string\" -Context 2,1 | ForEach-Object { $_.Context.PreContext; $_.Line; $_.Context.PostContext })",
       "PowerShell(Set-Location \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify\\\\web\"; Select-String -Path src\\\\components\\\\modals\\\\AddEmployeeModal.tsx -Pattern \"send them the link below yourself|could not be sent\" -Context 3,4 | ForEach-Object { $_.Context.PreContext; \">>> $\\($_.Line\\)\"; $_.Context.PostContext })",
-      "PowerShell(Set-Location \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify\\\\server\"; npm run typecheck 2>&1 | Select-Object -Last 2; \"server typecheck=$LASTEXITCODE\"; Set-Location \"..\\\\web\"; npx tsc -b --pretty false 2>&1 | Select-Object -First 6; \"web typecheck=$LASTEXITCODE\")"
+      "PowerShell(Set-Location \"c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify\\\\server\"; npm run typecheck 2>&1 | Select-Object -Last 2; \"server typecheck=$LASTEXITCODE\"; Set-Location \"..\\\\web\"; npx tsc -b --pretty false 2>&1 | Select-Object -First 6; \"web typecheck=$LASTEXITCODE\")",
+      "PowerShell(cd 'c:\\\\Users\\\\ASUS\\\\Desktop\\\\Assistify'; git status --short; Write-Output \"--- lines ---\"; \\(Get-Content Interview.md | Measure-Object -Line\\).Lines)"
     ]
   }
 }

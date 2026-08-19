@@ -188,7 +188,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
                 </AvatarFallback>
               </Avatar>
               <span className="hidden text-sm font-semibold text-zinc-800 dark:text-zinc-200 md:inline-block truncate max-w-[120px]">
-                {user?.name || "Arjun Mehta"}
+                {user?.name}
               </span>
             </Button>
           </DropdownMenuTrigger>
@@ -196,14 +196,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
             <div className="flex flex-col space-y-1.5 p-2.5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold leading-none text-zinc-900 dark:text-zinc-100">
-                  {user?.name || "Arjun Mehta"}
+                  {user?.name}
                 </p>
                 <Badge variant={getRoleBadgeVariant(user?.role)} className="text-xs uppercase font-semibold">
                   {formatRoleName(user?.role)}
                 </Badge>
               </div>
               <p className="text-xs text-zinc-500 leading-none truncate">
-                {user?.email || "arjun@nexora.com"}
+                {user?.email}
               </p>
             </div>
             <DropdownMenuSeparator />

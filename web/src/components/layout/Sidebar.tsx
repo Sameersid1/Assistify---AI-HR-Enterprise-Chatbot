@@ -8,6 +8,8 @@ import {
   LogOut,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
+import { api } from "@/lib/api"
+import { LEAVE_TYPE_LABELS, type LeaveBalance } from "@/lib/types"
 import { getNavigationGroupsForRole, type NavItem } from "@/config/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -19,6 +21,119 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+
+/**
+ * The employee's real remaining balance.
+ *
+ * This card used to read "27d total · Casual: 8 · Sick: 5 · Earned: 14" for
+ * every person at every company. It now shows what /leave/my-balance says, and
+ * renders nothing at all while that is in flight or if it fails — an empty
+ * corner of a sidebar is honest in a way a plausible wrong number is not.
+ */
+const LeaveQuotaCard: React.FC = () => {
+  const [balances, setBalances] = React.useState<LeaveBalance[] | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    api
+      .get<{ balances: LeaveBalance[] }>("/leave/my-balance")
+      .then((r) => !cancelled && setBalances(r.balances))
+      .catch(() => !cancelled && setBalances([]))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!balances || balances.length === 0) return null
+  const total = balances.reduce((sum, b) => sum + b.available, 0)
+
+  return (
+    <div className="rounded-xl border border-indigo-100 bg-gradient-to-b from-indigo-50/70 to-indigo-50/30 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-indigo-950/20 p-3.5 space-y-2 text-xs shadow-2xs">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+          <Sparkles className="h-3.5 w-3.5" />
+          Leave Left
+        </span>
+        <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
+          {total}d total
+        </span>
+      </div>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+        {balances.map((b, i) => (
+          <React.Fragment key={b.type}>
+            {i > 0 && " · "}
+            {LEAVE_TYPE_LABELS[b.type].replace(" Leave", "")}:{" "}
+            <strong className="text-zinc-900 dark:text-zinc-100">{b.available}</strong>
+          </React.Fragment>
+        ))}
+      </p>
+      <Link
+        to="/app/chat"
+        className="inline-flex items-center justify-between w-full pt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+      >
+        <span>Ask the Assistant</span>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </Link>
+    </div>
+  )
+}
+
+/**
+ * How many leave requests are actually waiting on HR right now.
+ *
+ * The "Avg resolution: 1.4h" line that sat under this is gone — nothing in the
+ * system measures decision time, so there was no number to replace it with.
+ */
+const ApprovalQueueCard: React.FC = () => {
+  const [pending, setPending] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    api
+      .get<{ requests: unknown[] }>("/leave/requests?status=PENDING")
+      .then((r) => !cancelled && setPending(r.requests.length))
+      .catch(() => !cancelled && setPending(null))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (pending === null) return null
+
+  return (
+    <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/30 p-3.5 space-y-2 text-xs shadow-2xs">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full bg-amber-500",
+              pending > 0 && "animate-pulse",
+            )}
+          />
+          Approval Queue
+        </span>
+        <Badge
+          variant={pending > 0 ? "pending" : "active"}
+          className="text-xs py-0.5 px-1.5 font-mono font-semibold"
+        >
+          {pending} Pending
+        </Badge>
+      </div>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+        {pending === 0
+          ? "Nothing is waiting on a decision."
+          : `${pending} request${pending === 1 ? "" : "s"} awaiting your decision.`}
+      </p>
+      <Link
+        to="/app/leave-approvals"
+        className="inline-flex items-center justify-between w-full pt-1 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:underline"
+      >
+        <span>Review approvals</span>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </Link>
+    </div>
+  )
+}
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -156,80 +271,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           ))}
 
-          {/* ROLE-TAILORED DYNAMIC STATUS WIDGET */}
+          {/* ROLE-TAILORED STATUS WIDGET — fetched, never hardcoded. */}
           {!isCollapsed && (
             <div className="pt-2">
-              {currentRole === "employee" && (
-                <div className="rounded-xl border border-indigo-100 bg-gradient-to-b from-indigo-50/70 to-indigo-50/30 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-indigo-950/20 p-3.5 space-y-2 text-xs shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Leave Quota
-                    </span>
-                    <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
-                      27d total
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Casual: <strong className="text-zinc-900 dark:text-zinc-100">8</strong> · Sick: <strong className="text-zinc-900 dark:text-zinc-100">5</strong> · Earned: <strong className="text-zinc-900 dark:text-zinc-100">14</strong>
-                  </p>
-                  <Link
-                    to="/app/chat"
-                    className="inline-flex items-center justify-between w-full pt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                  >
-                    <span>Ask AI Assistant</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              )}
-
-              {currentRole === "hr" && (
-                <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/30 p-3.5 space-y-2 text-xs shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                      Queue Status
-                    </span>
-                    <Badge variant="pending" className="text-xs py-0.5 px-1.5 font-mono font-semibold">
-                      7 Pending
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Avg resolution: <span className="font-bold text-zinc-900 dark:text-zinc-100">1.4h</span>
-                  </p>
-                  <Link
-                    to="/app/leave-approvals"
-                    className="inline-flex items-center justify-between w-full pt-1 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:underline"
-                  >
-                    <span>Review approvals</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              )}
-
-              {currentRole === "admin" && (
-                <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-900/60 p-3.5 space-y-2 text-xs shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      System Health
-                    </span>
-                    <span className="text-xs font-mono text-emerald-600 font-bold">
-                      99.98%
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    SOC-2 Vault · 48 Active Users
-                  </p>
-                  <Link
-                    to="/app"
-                    className="inline-flex items-center justify-between w-full pt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                  >
-                    <span>Inspect live stream</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              )}
+              {currentRole === "employee" && <LeaveQuotaCard />}
+              {currentRole === "hr" && <ApprovalQueueCard />}
             </div>
           )}
         </div>
@@ -246,10 +292,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </Avatar>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                    {user?.name || "Arjun Mehta"}
+                    {user?.name}
                   </p>
                   <p className="text-xs text-zinc-400 truncate">
-                    {user?.email || "arjun@nexora.com"}
+                    {user?.email}
                   </p>
                 </div>
               </div>

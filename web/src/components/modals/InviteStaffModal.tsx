@@ -13,6 +13,7 @@ import { api, ApiError } from "@/lib/api"
 import type { InviteRequest, InviteResponse } from "@/lib/types"
 import {
   UserCheck,
+  Check,
   Mail,
   ShieldAlert,
   Shield,
@@ -31,9 +32,33 @@ export interface StaffInviteData {
   name: string
   email: string
   personalEmail?: string
-  role: "hr" | "it_support" | "admin"
-  permissions: string[]
-  expiresIn: string
+  role: StaffRole
+}
+
+type StaffRole = "hr" | "it_support" | "admin"
+
+/**
+ * What each role can actually do, taken from the server's route guards and the
+ * role-creation whitelist in user.service.ts — not a wish list.
+ */
+const ROLE_CAPABILITIES: Record<StaffRole, string[]> = {
+  hr: [
+    "Approve and reject employee leave requests",
+    "Invite employees and manage their accounts",
+    "Upload policy documents for the assistant to search",
+    "Ask the assistant about anyone's leave in the company",
+  ],
+  it_support: [
+    "View the employee directory",
+    "Apply for and track their own leave",
+    "Ask the assistant about their own records",
+  ],
+  admin: [
+    "Invite HR and IT Support accounts",
+    "Deactivate and reactivate any account",
+    "Approve and reject leave requests",
+    "Upload policy documents for the assistant to search",
+  ],
 }
 
 interface InviteStaffModalProps {
@@ -51,17 +76,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
     name: "",
     email: "",
     personalEmail: "",
-    role: "hr" as "hr" | "it_support" | "admin",
-    expiry: "72h",
-  })
-
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({
-    leave_approvals: true,
-    employee_mgmt: true,
-    policy_docs: true,
-    analytics_view: true,
-    audit_logs: false,
-    system_settings: false,
+    role: "hr" as StaffRole,
   })
 
   const [result, setResult] = useState<InviteResponse | null>(null)
@@ -69,37 +84,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const handleRoleChange = (role: "hr" | "it_support" | "admin") => {
-    setFormData({ ...formData, role })
-    if (role === "admin") {
-      setPermissions({
-        leave_approvals: true,
-        employee_mgmt: true,
-        policy_docs: true,
-        analytics_view: true,
-        audit_logs: true,
-        system_settings: true,
-      })
-    } else if (role === "hr") {
-      setPermissions({
-        leave_approvals: true,
-        employee_mgmt: true,
-        policy_docs: true,
-        analytics_view: true,
-        audit_logs: false,
-        system_settings: false,
-      })
-    } else if (role === "it_support") {
-      setPermissions({
-        leave_approvals: false,
-        employee_mgmt: true,
-        policy_docs: true,
-        analytics_view: false,
-        audit_logs: false,
-        system_settings: false,
-      })
-    }
-  }
+  const handleRoleChange = (role: StaffRole) => setFormData({ ...formData, role })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -128,8 +113,8 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
         email: invite.user.email,
         personalEmail: invite.invitationSentTo,
         role: formData.role,
-        permissions: Object.keys(permissions).filter((k) => permissions[k]),
-        expiresIn: formData.expiry,
+
+
       })
     } catch (err) {
       setSubmitError(
@@ -160,7 +145,6 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
       email: "",
       personalEmail: "",
       role: "hr",
-      expiry: "72h",
     })
     onClose()
   }
@@ -242,7 +226,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                   Staff Activation Link
                 </span>
-                <Badge variant="pending" className="text-[10px] py-0 px-2 font-mono">Expires in {formData.expiry}</Badge>
+                <Badge variant="pending" className="text-[10px] py-0 px-2 font-mono">Expires in 72 hours</Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Input
@@ -292,7 +276,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                   <Input
                     type="email"
                     required
-                    placeholder="priya.hr@nexora.com"
+                    placeholder="name@company.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="h-9 pl-9 text-xs"
@@ -381,74 +365,34 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
               </div>
             </div>
 
-            {/* Granular Permission Checklist */}
+            {/* What the chosen role actually grants.
+                This replaced four checkboxes that were never sent anywhere —
+                the invite payload is email, name and role. Ticking "Access
+                System Audit Log" changed nothing, and there is no audit log.
+                Permissions here come from the role, so they are shown, not set. */}
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between text-xs font-semibold text-zinc-700 dark:text-zinc-300 border-b border-zinc-200/60 dark:border-zinc-800/60 pb-1.5">
-                <span className="flex items-center gap-1.5">
-                  <Sliders className="h-3.5 w-3.5 text-zinc-500" />
-                  Assigned Privileges & Permissions
-                </span>
-                <span className="text-[11px] text-zinc-400 font-mono">SOC-2 Gated</span>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 border-b border-zinc-200/60 dark:border-zinc-800/60 pb-1.5">
+                <Sliders className="h-3.5 w-3.5 text-zinc-500" />
+                What this role can do
               </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={permissions.leave_approvals}
-                    onChange={(e) => setPermissions({ ...permissions, leave_approvals: e.target.checked })}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                  />
-                  <span className="text-zinc-700 dark:text-zinc-300">Approve Employee Leaves</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={permissions.employee_mgmt}
-                    onChange={(e) => setPermissions({ ...permissions, employee_mgmt: e.target.checked })}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                  />
-                  <span className="text-zinc-700 dark:text-zinc-300">Manage Employee Records</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={permissions.policy_docs}
-                    onChange={(e) => setPermissions({ ...permissions, policy_docs: e.target.checked })}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                  />
-                  <span className="text-zinc-700 dark:text-zinc-300">Publish Policy Documents</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={permissions.audit_logs}
-                    onChange={(e) => setPermissions({ ...permissions, audit_logs: e.target.checked })}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                  />
-                  <span className="text-zinc-700 dark:text-zinc-300">Access System Audit Log</span>
-                </label>
-              </div>
+              <ul className="space-y-1.5 text-xs">
+                {ROLE_CAPABILITIES[formData.role].map((line) => (
+                  <li key={line} className="flex items-start gap-2 text-zinc-700 dark:text-zinc-300">
+                    <Check className="h-3.5 w-3.5 mt-px shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-zinc-400 pt-0.5">
+                Access follows the role. It is enforced on the server, not chosen here.
+              </p>
             </div>
 
-            {/* Expiry Selector & Actions */}
+            {/* Actions */}
             <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 font-medium">Link Expiry:</span>
-                <select
-                  value={formData.expiry}
-                  onChange={(e) => setFormData({ ...formData, expiry: e.target.value })}
-                  className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-1 px-2 text-xs font-semibold"
-                >
-                  <option value="24h">24 Hours</option>
-                  <option value="48h">48 Hours</option>
-                  <option value="72h">72 Hours (Recommended)</option>
-                  <option value="7d">7 Days</option>
-                </select>
-              </div>
+              <span className="text-[11px] text-zinc-400">
+                The activation link is single-use and expires in 72 hours.
+              </span>
 
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={onClose} className="text-xs h-8">

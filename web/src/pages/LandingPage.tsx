@@ -5,7 +5,6 @@ import {
   Sparkles,
   BookOpen,
   Database,
-  Zap,
   ArrowRight,
   ShieldCheck,
   Calendar,
@@ -37,42 +36,51 @@ interface DemoQuery {
   metric: string
 }
 
+/**
+ * An illustration of the four things the assistant actually does, using the
+ * leave types the system really models.
+ *
+ * These are worked examples, not live data — but they no longer invent a
+ * company, a named manager, or benefits the product has no concept of. Someone
+ * reading this page should not be told about a $50,000 medical schedule that
+ * exists nowhere in the system.
+ */
 const DEMO_QUERIES: DemoQuery[] = [
   {
     id: "leave",
     icon: Calendar,
     label: "Leave Balance",
-    query: "What is my remaining casual leave balance for Q3?",
-    answer: "You currently have 8 casual leaves remaining out of 12 for 2026. Up to 5 unused days can rollover to Q3 with manager approval.",
-    doc: "Leave Policy 2026 · §4.2",
-    metric: "8 Days Remaining",
+    query: "How much casual leave do I have left?",
+    answer: "You have 8 of 12 casual days left this year — 1 more is held against a request still awaiting approval.",
+    doc: "Read live from your leave balance",
+    metric: "8 Days Left",
   },
   {
-    id: "wfh",
-    icon: Zap,
-    label: "Hybrid & WFH",
-    query: "What is our monthly broadband reimbursement policy?",
-    answer: "Hybrid employees can claim up to $75/month for high-speed home internet via the Expense portal by the 25th.",
-    doc: "Hybrid Work Guidelines · §3.1",
-    metric: "$75 / Month",
-  },
-  {
-    id: "health",
-    icon: ShieldCheck,
-    label: "Medical Benefits",
-    query: "What is the insurance coverage limit for family dependents?",
-    answer: "Nexora Group Medical covers the employee, spouse, and up to 2 children with an annual aggregate limit of $50,000.",
-    doc: "Health Insurance · Schedule A",
-    metric: "$50,000 Coverage",
+    id: "policy",
+    icon: BookOpen,
+    label: "Policy Search",
+    query: "How much notice do I need to give before taking leave?",
+    answer: "Your company's leave policy asks for 7 days' notice for planned leave. Sick leave can be applied for the same day.",
+    doc: "Answered from your uploaded policy",
+    metric: "Cited Source",
   },
   {
     id: "apply",
     icon: Send,
-    label: "1-Click Leave",
-    query: "Apply 2-day casual leave for Aug 10 and Aug 11",
-    answer: "Drafted leave request #LR-2026-108 for Aug 10–11. Manager Devin Vance notified automatically.",
-    doc: "HRMS Workflow #LA-902",
-    metric: "Auto-Drafted",
+    label: "Apply in Chat",
+    query: "Apply 2 days casual leave for the 10th and 11th",
+    answer: "That's Mon 10 to Tue 11 August, 2 working days — shall I apply? Submitted requests go to HR for approval.",
+    doc: "Confirms the dates before submitting",
+    metric: "Sent for Approval",
+  },
+  {
+    id: "scope",
+    icon: ShieldCheck,
+    label: "Knows Its Limits",
+    query: "How much leave does everyone on my team have?",
+    answer: "I can only see your own records — the team view isn't available to your account. HR can answer that one.",
+    doc: "Tools are chosen by your role",
+    metric: "Access Enforced",
   },
 ]
 
@@ -314,10 +322,10 @@ export const LandingPage: React.FC = () => {
         {/* 4 ICON-FIRST CAPABILITY TILES */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { icon: BookOpen, label: "Policy Citations", sub: "100% Grounded" },
-            { icon: Database, label: "Live HRMS Sync", sub: "Real-time Balances" },
-            { icon: Send, label: "1-Click Approvals", sub: "Auto-Workflows" },
-            { icon: ShieldCheck, label: "RBAC Security", sub: "SOC-2 Certified" },
+            { icon: BookOpen, label: "Policy Citations", sub: "Cites the document" },
+            { icon: Database, label: "Live HRMS Sync", sub: "Reads live balances" },
+            { icon: Send, label: "1-Click Approvals", sub: "Apply from chat" },
+            { icon: ShieldCheck, label: "RBAC Security", sub: "Role-Scoped Tools" },
           ].map((feat) => {
             const Icon = feat.icon
             return (
@@ -348,17 +356,19 @@ export const LandingPage: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.4 }}
           className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4 grid grid-cols-3 gap-2 text-center shadow-2xs"
         >
+          {/* Facts about the build, not invented benchmarks. Every number here
+              can be checked against the source. */}
           <div>
-            <p className="text-xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">78%</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Deflection</p>
+            <p className="text-xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">5</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Roles</p>
           </div>
           <div className="border-x border-zinc-200 dark:border-zinc-800">
-            <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">&lt; 2s</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Latency</p>
+            <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">8</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">AI Tools</p>
           </div>
           <div>
-            <p className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">99.4%</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Accuracy</p>
+            <p className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">1</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Tenant per Query</p>
           </div>
         </motion.div>
       </main>
@@ -366,7 +376,7 @@ export const LandingPage: React.FC = () => {
       {/* Footer */}
       <footer className="border-t border-zinc-200/80 bg-white/80 py-4 dark:border-zinc-800/80 dark:bg-zinc-950 text-xs text-zinc-400">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6">
-          <span className="text-[11px]">Assistify HRMS · Nexora Technologies Enterprise</span>
+          <span className="text-[11px]">Assistify · Final-year project, KIET Group of Institutions</span>
           <Link to="/login" className="text-indigo-600 dark:text-indigo-400 hover:underline text-[11px] font-medium">
             Go to Login →
           </Link>

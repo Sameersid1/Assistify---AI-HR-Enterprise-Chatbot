@@ -45,3 +45,6 @@ desktop.ini
 
 # Claude Code — personal settings stay local, shared settings are committed
 .claude/settings.local.json
+
+# Personal interview prep — not part of the project
+Interview.md
