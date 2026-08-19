@@ -258,7 +258,7 @@ export const LoginPage: React.FC = () => {
               </label>
               <Input
                 type="email"
-                placeholder=""
+                placeholder="you@company.com"
                 autoComplete="email"
                 disabled={isLoading}
                 {...register("email")}
@@ -286,7 +286,7 @@ export const LoginPage: React.FC = () => {
               <div className="relative">
                 <Input
                   type={showPassword ? "text" : "password"}
-                  placeholder=""
+                  placeholder="Your password"
                   autoComplete="current-password"
                   disabled={isLoading}
                   {...register("password")}
