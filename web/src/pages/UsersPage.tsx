@@ -1,162 +1,260 @@
-import React, { useState } from "react"
-import { UserCog, Plus, Search, Shield, ShieldCheck, Mail, Lock } from "lucide-react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
+import {
+  UserCog,
+  Plus,
+  Search,
+  Mail,
+  Loader2,
+  AlertCircle,
+  Inbox,
+  Send,
+  Ban,
+  RotateCcw,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { InviteStaffModal, type StaffInviteData } from "@/components/modals/InviteStaffModal"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { InviteStaffModal } from "@/components/modals/InviteStaffModal"
+import { api, ApiError } from "@/lib/api"
+import type { ApiUser, UserRole, UserStatus } from "@/lib/types"
 
-interface SystemUser {
-  id: string
-  name: string
-  email: string
-  role: string
-  roleTier: "admin" | "hr" | "it_support"
-  status: "active" | "invited"
-  lastActive: string
+const ROLE_LABELS: Record<UserRole, string> = {
+  employee: "Employee",
+  hr: "HR Manager",
+  it_support: "IT Support",
+  admin: "Administrator",
+  super_admin: "Super Administrator",
 }
 
-const INITIAL_USERS: SystemUser[] = [
-  { id: "u-1", name: "Vikram Malhotra", email: "admin@nexora.com", role: "Super Administrator", roleTier: "admin", status: "active", lastActive: "Just now" },
-  { id: "u-2", name: "Priya Sharma", email: "priya.hr@nexora.com", role: "HR Manager", roleTier: "hr", status: "active", lastActive: "14m ago" },
-  { id: "u-3", name: "Rohan Patel", email: "rohan.it@nexora.com", role: "IT Support Specialist", roleTier: "it_support", status: "active", lastActive: "1h ago" },
-  { id: "u-4", name: "Aditi Sharma", email: "aditi.hr@nexora.com", role: "HRBP Specialist", roleTier: "hr", status: "invited", lastActive: "Pending activation" },
-]
+const STATUS_VARIANT: Record<UserStatus, "active" | "pending" | "inactive"> = {
+  ACTIVE: "active",
+  INVITED: "pending",
+  DEACTIVATED: "inactive",
+}
+
+const initials = (name: string) =>
+  name.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
 
 export const UsersPage: React.FC = () => {
-  const [users, setUsers] = useState<SystemUser[]>(INITIAL_USERS)
+  const [users, setUsers] = useState<ApiUser[] | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  /** Id of the account mid-action, so only that row's buttons disable. */
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  const handleInviteStaff = (staff: StaffInviteData) => {
-    const newUser: SystemUser = {
-      id: staff.id,
-      name: staff.name,
-      email: staff.email,
-      role: staff.role === "admin" ? "Administrator" : staff.role === "hr" ? "HR Manager" : "IT Support Specialist",
-      roleTier: staff.role,
-      status: "invited",
-      lastActive: "Pending activation",
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get<{ users: ApiUser[] }>("/users")
+      setUsers(res.users)
+    } catch (err) {
+      setUsers([])
+      setError(err instanceof ApiError ? err.message : "Could not load accounts.")
     }
-    setUsers([newUser, ...users])
-  }
+  }, [])
 
-  const getRoleBadge = (tier: "admin" | "hr" | "it_support") => {
-    switch (tier) {
-      case "admin":
-        return <Badge variant="active" className="text-[10px] font-mono uppercase bg-indigo-600 text-white">Admin</Badge>
-      case "hr":
-        return <Badge variant="pending" className="text-[10px] font-mono uppercase">HR Ops</Badge>
-      case "it_support":
-        return <Badge variant="outline" className="text-[10px] font-mono uppercase border-sky-400 text-sky-600">IT Support</Badge>
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const filtered = useMemo(() => {
+    if (!users) return null
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) =>
+      [u.fullName, u.email, ROLE_LABELS[u.role]].some((f) =>
+        String(f).toLowerCase().includes(q),
+      ),
+    )
+  }, [users, searchTerm])
+
+  /** Shared handler — the three actions differ only by path and confirmation. */
+  const act = async (
+    user: ApiUser,
+    action: "resend-invitation" | "deactivate" | "reactivate",
+    confirm?: string,
+  ) => {
+    if (confirm && !window.confirm(confirm)) return
+    setBusy(user.id)
+    setError(null)
+    setNotice(null)
+    try {
+      await api.post(`/users/${user.id}/${action}`)
+      if (action === "resend-invitation") {
+        setNotice(`A fresh activation link has been sent to ${user.fullName}.`)
+      }
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "That action failed.")
+    } finally {
+      setBusy(null)
     }
   }
-
-  const getInitials = (name: string) => {
-    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-  }
-
-  const filteredUsers = users.filter(
-    (u) =>
-      u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.role.toLowerCase().includes(searchTerm.toLowerCase())
-  )
 
   return (
-    <div className="space-y-6 font-sans w-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-zinc-200/90 dark:border-zinc-800/90 pb-4">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
-            User & Role Management
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            User Management
           </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Configure system permissions, invite HR / IT staff, and audit access credentials
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+            {users === null
+              ? "Loading…"
+              : `${users.length} ${users.length === 1 ? "account" : "accounts"} in your organisation`}
           </p>
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => setIsInviteModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1.5 h-8.5 px-4 shadow-xs"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Invite HR / Staff</span>
-        </Button>
-      </div>
-
-      {/* Users Table Card */}
-      <div className="rounded-2xl border border-zinc-200/90 bg-white dark:border-zinc-800/90 dark:bg-zinc-900 p-5 space-y-4 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
             <Input
-              placeholder="Search staff by name or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8.5 pl-9 text-xs"
+              placeholder="Search accounts"
+              className="h-9 pl-9 text-xs"
             />
           </div>
-
-          <span className="text-xs text-zinc-400 font-mono font-medium">
-            {filteredUsers.length} privileged staff accounts
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-400 uppercase text-[11px] font-bold bg-zinc-50/50 dark:bg-zinc-900/50">
-                <th className="py-2.5 px-4 font-bold">Staff Member</th>
-                <th className="py-2.5 px-3 font-bold">System Role</th>
-                <th className="py-2.5 px-3 font-bold">Tier</th>
-                <th className="py-2.5 px-3 font-bold">Last Active</th>
-                <th className="py-2.5 px-4 font-bold text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-              {filteredUsers.map((u) => (
-                <tr key={u.id} className="h-12 hover:bg-zinc-50/70 dark:hover:bg-zinc-800/40 transition-colors">
-                  <td className="py-2 px-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-7.5 w-7.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-bold">
-                        <AvatarFallback>{getInitials(u.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="font-bold text-zinc-900 dark:text-zinc-100 truncate">{u.name}</p>
-                        <p className="text-[11px] text-zinc-400 font-mono truncate">{u.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
-                    {u.role}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">
-                    {getRoleBadge(u.roleTier)}
-                  </td>
-                  <td className="py-2 px-3 text-zinc-500 font-mono text-xs whitespace-nowrap">
-                    {u.lastActive}
-                  </td>
-                  <td className="py-2 px-4 text-right whitespace-nowrap">
-                    {u.status === "invited" ? (
-                      <Badge variant="pending" className="text-[10px] uppercase font-mono">Invited</Badge>
-                    ) : (
-                      <Badge variant="active" className="text-[10px] uppercase font-mono">Active</Badge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Button
+            size="sm"
+            onClick={() => setIsInviteModalOpen(true)}
+            className="h-9 gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Invite Staff
+          </Button>
         </div>
       </div>
 
-      {/* Invite Staff Modal Component */}
+      {error && (
+        <Alert variant="destructive" className="py-2.5">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
+      )}
+      {notice && (
+        <Alert className="py-2.5">
+          <Send className="h-4 w-4" />
+          <AlertDescription className="text-xs">{notice}</AlertDescription>
+        </Alert>
+      )}
+
+      {filtered === null ? (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-16 text-xs text-zinc-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading accounts…</span>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-16 text-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
+            <Inbox className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {searchTerm ? "No accounts match that" : "No accounts yet"}
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+          {filtered.map((user, i) => (
+            <div
+              key={user.id}
+              className={`flex flex-wrap items-center justify-between gap-4 p-4 ${
+                i > 0 ? "border-t border-zinc-100 dark:border-zinc-800" : ""
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                  {initials(user.fullName)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                    {user.fullName}
+                  </p>
+                  <p className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500 truncate">
+                    <Mail className="h-3 w-3" />
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                  {ROLE_LABELS[user.role]}
+                </Badge>
+                <Badge
+                  variant={STATUS_VARIANT[user.status]}
+                  className="text-[10px] py-0 px-1.5 font-mono"
+                >
+                  {user.status}
+                </Badge>
+
+                {/* Only offered where the server would accept it: a resend needs
+                    an unactivated account, a reactivate needs a deactivated one. */}
+                {user.status === "INVITED" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === user.id}
+                    onClick={() => void act(user, "resend-invitation")}
+                    className="h-7 gap-1.5 text-[11px]"
+                  >
+                    {busy === user.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Send className="h-3 w-3" />
+                    )}
+                    Resend invite
+                  </Button>
+                )}
+                {user.status === "ACTIVE" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === user.id}
+                    onClick={() =>
+                      void act(
+                        user,
+                        "deactivate",
+                        `Deactivate ${user.fullName}? They will be signed out everywhere and cannot sign back in.`,
+                      )
+                    }
+                    className="h-7 gap-1.5 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  >
+                    <Ban className="h-3 w-3" />
+                    Deactivate
+                  </Button>
+                )}
+                {user.status === "DEACTIVATED" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === user.id}
+                    onClick={() => void act(user, "reactivate")}
+                    className="h-7 gap-1.5 text-[11px]"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Reactivate
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {users !== null && (
+        <p className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+          <UserCog className="h-3.5 w-3.5" />
+          Accounts are deactivated, never deleted, so their leave history stays intact.
+        </p>
+      )}
+
       <InviteStaffModal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
-        onInviteStaff={handleInviteStaff}
+        onInviteStaff={() => void load()}
       />
     </div>
   )

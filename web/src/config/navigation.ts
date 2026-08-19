@@ -70,14 +70,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
     {
       groupTitle: "Self-Service",
       items: [
-        {
-          label: "My Tickets",
-          icon: Ticket,
-          href: "/app/my-tickets",
-          roles: ["employee"],
-          badge: 2,
-          badgeVariant: "pending",
-        },
+        
         {
           label: "Company Policies",
           icon: FileText,
@@ -114,8 +107,6 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           icon: CalendarCheck,
           href: "/app/leave-approvals",
           roles: ["hr"],
-          badge: 7,
-          badgeVariant: "pending",
         },
         {
           label: "Employee Directory",
@@ -123,24 +114,13 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/employees",
           roles: ["hr"],
         },
-        {
-          label: "Support Tickets",
-          icon: Ticket,
-          href: "/app/tickets",
-          roles: ["hr"],
-          badge: 12,
-        },
+        
       ],
     },
     {
       groupTitle: "Operations",
       items: [
-        {
-          label: "HR Analytics",
-          icon: BarChart3,
-          href: "/app/analytics",
-          roles: ["hr"],
-        },
+        
         {
           label: "Company Policies",
           icon: FileText,
@@ -190,12 +170,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/documents",
           roles: ["admin"],
         },
-        {
-          label: "System Settings",
-          icon: Settings,
-          href: "/app/settings",
-          roles: ["admin"],
-        },
+        
       ],
     },
     {
@@ -246,14 +221,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/apply-leave",
           roles: ["it_support"],
         },
-        {
-          label: "IT Tickets",
-          icon: LifeBuoy,
-          href: "/app/it-tickets",
-          roles: ["it_support"],
-          badge: 5,
-          badgeVariant: "pending",
-        },
+        
       ],
     },
   ],

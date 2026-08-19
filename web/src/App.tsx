@@ -12,12 +12,7 @@ import { ChatPage } from "@/pages/ChatPage"
 import { EmployeesPage } from "@/pages/EmployeesPage"
 import { LeaveApprovalsPage } from "@/pages/LeaveApprovalsPage"
 import { DocumentsPage } from "@/pages/DocumentsPage"
-import { TicketsPage } from "@/pages/TicketsPage"
-import { AnalyticsPage } from "@/pages/AnalyticsPage"
-import { MyTicketsPage } from "@/pages/MyTicketsPage"
-import { ITTicketsPage } from "@/pages/ITTicketsPage"
 import { UsersPage } from "@/pages/UsersPage"
-import { SettingsPage } from "@/pages/SettingsPage"
 
 /** Role sets — these mirror the server's requireRole guards. */
 const HR_ONLY = ["hr", "admin"] as const
@@ -53,9 +48,7 @@ export function App() {
               {/* Any signed-in user */}
               <Route index element={<DashboardPage />} />
               <Route path="chat" element={<ChatPage />} />
-              <Route path="my-tickets" element={<MyTicketsPage />} />
               <Route path="documents" element={<DocumentsPage />} />
-              <Route path="settings" element={<SettingsPage />} />
               <Route path="apply-leave" element={<ApplyLeavePage />} />
 
               {/* HR */}
@@ -66,20 +59,6 @@ export function App() {
               <Route
                 path="leave-approvals"
                 element={<ProtectedRoute roles={[...HR_ONLY]}><LeaveApprovalsPage /></ProtectedRoute>}
-              />
-              <Route
-                path="tickets"
-                element={<ProtectedRoute roles={[...HR_ONLY]}><TicketsPage /></ProtectedRoute>}
-              />
-              <Route
-                path="analytics"
-                element={<ProtectedRoute roles={[...HR_ONLY]}><AnalyticsPage /></ProtectedRoute>}
-              />
-
-              {/* IT Support */}
-              <Route
-                path="it-tickets"
-                element={<ProtectedRoute roles={[...IT_ONLY]}><ITTicketsPage /></ProtectedRoute>}
               />
 
               {/* Admin */}
