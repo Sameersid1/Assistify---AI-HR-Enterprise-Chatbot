@@ -110,6 +110,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           badgeVariant: "active",
         },
         {
+          // HR staff are employees with leave balances of their own. Their
+          // requests go to the same queue and are decided by someone else.
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["hr"],
+        },
+        {
           label: "Leave Approvals",
           icon: CalendarCheck,
           href: "/app/leave-approvals",
@@ -170,6 +178,12 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           badgeVariant: "active",
         },
         {
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["admin"],
+        },
+        {
           label: "User Management",
           icon: UserCog,
           href: "/app/users",
@@ -212,6 +226,12 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           roles: ["it_support"],
           badge: "AI",
           badgeVariant: "active",
+        },
+        {
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["it_support"],
         },
         {
           label: "IT Tickets",

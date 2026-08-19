@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus } from "@/lib/types"
 
 const STATUS_FILTERS: { label: string; value: LeaveStatus | "ALL" }[] = [
@@ -33,6 +34,7 @@ function formatRange(from: string, to: string): string {
 }
 
 export const LeaveApprovalsPage: React.FC = () => {
+  const { user } = useAuth()
   const [requests, setRequests] = useState<LeaveRequest[] | null>(null)
   const [filter, setFilter] = useState<LeaveStatus | "ALL">("PENDING")
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -214,7 +216,17 @@ export const LeaveApprovalsPage: React.FC = () => {
                   )}
                 </div>
 
-                {req.status === "PENDING" && (
+                {/* The queue is company-wide, so an approver's own requests
+                    appear in it. Nobody decides their own leave — the server
+                    refuses with 403 — so offer the buttons only where they can
+                    actually work, rather than letting a click explain the rule. */}
+                {req.status === "PENDING" && req.employee?.id === user?.id && (
+                  <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+                    Your own request — another approver decides this
+                  </span>
+                )}
+
+                {req.status === "PENDING" && req.employee?.id !== user?.id && (
                   <div className="flex items-center gap-2 shrink-0">
                     <Button
                       size="sm"
