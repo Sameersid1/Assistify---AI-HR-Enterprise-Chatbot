@@ -1,7 +1,7 @@
 import type { Types } from 'mongoose';
 import { UserModel } from '../users/user.model';
 import { CompanyModel } from '../companies/company.model';
-import { toPublicUser, type PublicUser } from '../users/user.service';
+import { toPublicUserWithCompany, type PublicUser } from '../users/user.service';
 import { hashPassword, verifyPassword } from './auth.password';
 import {
   hashToken,
@@ -57,7 +57,7 @@ export async function login(
   }
 
   const tokens = await issueTokens(user._id, user.companyId, user.role);
-  return { user: toPublicUser(user), tokens };
+  return { user: await toPublicUserWithCompany(user), tokens };
 }
 
 /** Issue an access + refresh pair and persist the refresh-token hash. */
@@ -144,7 +144,7 @@ export async function activate(
   await user.save();
 
   const tokens = await issueTokens(user._id, user.companyId, user.role);
-  return { user: toPublicUser(user), tokens };
+  return { user: await toPublicUserWithCompany(user), tokens };
 }
 
 /**
@@ -198,5 +198,5 @@ export async function logout(userId: Types.ObjectId, refreshToken?: string): Pro
 export async function getMe(userId: Types.ObjectId): Promise<PublicUser> {
   const user = await UserModel.findById(userId);
   if (!user) throw new UnauthorizedError();
-  return toPublicUser(user);
+  return toPublicUserWithCompany(user);
 }

@@ -80,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
                 <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate">
-                  {user?.company || "Nexora Technologies"}
+                  {user?.company}
                 </span>
               </div>
             )}

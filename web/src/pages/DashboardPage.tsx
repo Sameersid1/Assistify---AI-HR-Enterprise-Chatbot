@@ -142,7 +142,7 @@ const EmployeeDashboardView: React.FC = () => {
             Good morning, {user?.name?.split(" ")[0] || "Arjun"}
           </h1>
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Nexora Technologies · Employee Self-Service
+            {user?.company} · Employee Self-Service
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -336,6 +336,7 @@ const INITIAL_HR_REQUESTS: HRLeaveRequest[] = [
 ]
 
 const HRWorkQueueDashboardView: React.FC = () => {
+  const { user } = useAuth()
   const [requests, setRequests] = useState<HRLeaveRequest[]>(INITIAL_HR_REQUESTS)
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false)
   const [newJoinerCount, setNewJoinerCount] = useState(3)
@@ -357,7 +358,7 @@ const HRWorkQueueDashboardView: React.FC = () => {
             7 requests need your attention
           </h1>
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Nexora Technologies · 48 employees
+            {user?.company} · People Operations
           </p>
         </div>
 
@@ -587,6 +588,7 @@ const AUDIT_LOGS = [
 ]
 
 const AdminDashboardView: React.FC = () => {
+  const { user } = useAuth()
   const [invites, setInvites] = useState<PendingInvite[]>(INITIAL_INVITES)
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [resentId, setResentId] = useState<string | null>(null)
@@ -615,7 +617,7 @@ const AdminDashboardView: React.FC = () => {
             System overview
           </h1>
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Nexora Technologies · assistify.app
+            {user?.company} · Administration
           </p>
         </div>
         <Button

@@ -28,7 +28,7 @@ interface TopBarProps {
 
 const ROUTE_TITLES: Record<string, string> = {
   "/app": "Dashboard",
-  "/app/chat": "HR Assistant Chat",
+  "/app/chat": "Assistify Assistant",
   "/app/apply-leave": "Apply for Time Off",
   "/app/my-tickets": "My Tickets",
   "/app/employees": "Employee Directory",
@@ -49,7 +49,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
 
   const currentTitle =
     ROUTE_TITLES[location.pathname] ||
-    (location.pathname.startsWith("/app/chat") ? "HR Assistant Chat" : "Dashboard")
+    (location.pathname.startsWith("/app/chat") ? "Assistify Assistant" : "Dashboard")
 
   const getRoleBadgeVariant = (role?: UserRole) => {
     switch (role) {

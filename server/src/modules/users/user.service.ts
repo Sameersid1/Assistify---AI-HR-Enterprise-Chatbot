@@ -22,6 +22,12 @@ export interface PublicUser {
   role: string;
   status: string;
   companyId: string;
+  /**
+   * Resolved only on the authentication responses — see toPublicUserWithCompany.
+   * The client shows it as the tenant's name in the shell, and without it every
+   * signed-in user is greeted by a placeholder regardless of who they work for.
+   */
+  companyName?: string;
   employeeId?: string | null;
   department?: string | null;
   designation?: string | null;
@@ -41,6 +47,21 @@ export function toPublicUser(user: any): PublicUser {
     department: user.department ?? null,
     designation: user.designation ?? null,
   };
+}
+
+/**
+ * The same shape plus the tenant's display name.
+ *
+ * Kept separate from toPublicUser because it costs a second query, and only the
+ * authentication responses need it — a listing of forty colleagues would repeat
+ * one company name forty times for no reader.
+ */
+export async function toPublicUserWithCompany(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user: any,
+): Promise<PublicUser> {
+  const company = await CompanyModel.findById(user.companyId).select('name');
+  return { ...toPublicUser(user), companyName: company?.name };
 }
 
 /**
