@@ -58,7 +58,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           badgeVariant: "active",
         },
         {
-          label: "HR Assistant Chat",
+          label: "Assistify Assistant",
           icon: MessageSquare,
           href: "/app/chat",
           roles: ["employee"],
@@ -102,20 +102,12 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           // Every role gets the assistant; the tools inside it differ by role
           // (chat.tools.ts). HR's version can also read the company-wide leave
           // queue and the employee directory.
-          label: "HR Assistant Chat",
+          label: "Assistify Assistant",
           icon: MessageSquare,
           href: "/app/chat",
           roles: ["hr"],
           badge: "AI",
           badgeVariant: "active",
-        },
-        {
-          // HR staff are employees with leave balances of their own. Their
-          // requests go to the same queue and are decided by someone else.
-          label: "Apply for Leave",
-          icon: CalendarPlus,
-          href: "/app/apply-leave",
-          roles: ["hr"],
         },
         {
           label: "Leave Approvals",
@@ -157,6 +149,19 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
         },
       ],
     },
+    {
+      // HR staff accrue leave themselves and their requests go to the same
+      // queue, decided by someone else. Personal, not part of the work queue.
+      groupTitle: "Self-Service",
+      items: [
+        {
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["hr"],
+        },
+      ],
+    },
   ],
 
   admin: [
@@ -167,20 +172,6 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           label: "Dashboard",
           icon: LayoutDashboard,
           href: "/app",
-          roles: ["admin"],
-        },
-        {
-          label: "HR Assistant Chat",
-          icon: MessageSquare,
-          href: "/app/chat",
-          roles: ["admin"],
-          badge: "AI",
-          badgeVariant: "active",
-        },
-        {
-          label: "Apply for Leave",
-          icon: CalendarPlus,
-          href: "/app/apply-leave",
           roles: ["admin"],
         },
         {
@@ -207,6 +198,28 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
         },
       ],
     },
+    {
+      // Administrators accrue leave and ask the assistant about their own
+      // records like anyone else. That is not governance, so it does not
+      // belong in the group above.
+      groupTitle: "Self-Service",
+      items: [
+        {
+          label: "Assistify Assistant",
+          icon: MessageSquare,
+          href: "/app/chat",
+          roles: ["admin"],
+          badge: "AI",
+          badgeVariant: "active",
+        },
+        {
+          label: "Apply for Leave",
+          icon: CalendarPlus,
+          href: "/app/apply-leave",
+          roles: ["admin"],
+        },
+      ],
+    },
   ],
 
   it_support: [
@@ -220,7 +233,7 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           roles: ["it_support"],
         },
         {
-          label: "HR Assistant Chat",
+          label: "Assistify Assistant",
           icon: MessageSquare,
           href: "/app/chat",
           roles: ["it_support"],
