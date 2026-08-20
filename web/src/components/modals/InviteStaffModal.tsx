@@ -341,7 +341,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                     IT Support
                   </div>
                   <p className="text-[11px] text-zinc-500 mt-1 line-clamp-2">
-                    Resolve tech tickets & hardware provisioning.
+                    Directory access and their own self-service.
                   </p>
                 </button>
 
@@ -359,7 +359,7 @@ export const InviteStaffModal: React.FC<InviteStaffModalProps> = ({
                     Administrator
                   </div>
                   <p className="text-[11px] text-zinc-500 mt-1 line-clamp-2">
-                    Full governance, audit logs & RBAC configuration.
+                    Invite HR and IT, deactivate accounts, approve leave.
                   </p>
                 </button>
               </div>
