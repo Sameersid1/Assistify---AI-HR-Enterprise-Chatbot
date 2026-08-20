@@ -1,18 +1,28 @@
 import React, { useEffect, useRef, useState } from "react"
-import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench, PenLine, Trash2 } from "lucide-react"
+import { Send, Sparkles, Bot, User, Loader2, AlertCircle, Wrench, PenLine, Trash2, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
-import type { ChatMessage, ChatRequest, ChatResponse } from "@/lib/types"
+import type { ChatMessage, ChatRequest } from "@/lib/types"
 
 interface DisplayMessage extends ChatMessage {
   id: string
   timestamp: string
   /** Assistant turns only — which tools produced the answer. */
   toolsUsed?: string[]
+  /** True while this turn is still being written. Never persisted. */
+  streaming?: boolean
 }
+
+/** One frame from POST /chat/stream. Mirrors ChatStreamEvent on the server. */
+type ChatStreamEvent =
+  | { type: "tool"; name: string }
+  | { type: "delta"; text: string }
+  | { type: "discard" }
+  | { type: "done"; toolsUsed: string[] }
+  | { type: "error"; code: string; message: string }
 
 /**
  * Tool names are API identifiers; these are what a person should see. An
@@ -72,6 +82,7 @@ function loadTranscript(userId: string): DisplayMessage[] {
         !!m &&
         typeof m === "object" &&
         typeof (m as DisplayMessage).content === "string" &&
+        (m as DisplayMessage).content.trim().length > 0 &&
         ((m as DisplayMessage).role === "user" ||
           (m as DisplayMessage).role === "assistant"),
     )
@@ -87,22 +98,47 @@ export const ChatPage: React.FC = () => {
   const [isThinking, setIsThinking] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const scrollAnchor = useRef<HTMLDivElement>(null)
+  /** Aborts the answer in progress. Null when nothing is streaming. */
+  const abortRef = useRef<AbortController | null>(null)
+
+  /**
+   * Which user's transcript is currently in `messages`.
+   *
+   * Without this the save effect can run before the load effect has put
+   * anything in state — on a remount, or on the render where the user first
+   * resolves — and write an empty array straight over the saved conversation.
+   * Saving is allowed only once the state is known to belong to this user.
+   */
+  const hydratedFor = useRef<string | null>(null)
 
   // Restore on mount, and whenever the signed-in user changes.
   useEffect(() => {
+    hydratedFor.current = user?.id ?? null
     setMessages(user?.id ? loadTranscript(user.id) : [])
   }, [user?.id])
 
-  // Persist after every turn. Cheap at this size, and it means a reload or an
-  // accidental navigation does not lose the conversation.
+  // Persist after every completed turn. Skipped while a reply is streaming:
+  // writing on each delta would hit localStorage once per token, and a
+  // half-written answer is not worth restoring.
+  const isStreaming = messages.some((m) => m.streaming)
   useEffect(() => {
-    if (!user?.id) return
+    // hydratedFor: never write one user's conversation under another's key
+    // during the render where the signed-in user is changing.
+    if (!user?.id || isStreaming || hydratedFor.current !== user.id) return
     try {
-      localStorage.setItem(storageKey(user.id), JSON.stringify(messages))
+      const key = storageKey(user.id)
+      // An empty transcript never overwrites a saved one. On a remount the save
+      // effect can run against empty state before the load effect's setMessages
+      // has landed, and that wrote a blank array over a real conversation.
+      // Clearing the chat calls removeItem directly, so it is unaffected.
+      if (messages.length === 0 && (localStorage.getItem(key)?.length ?? 0) > 2) return
+      // `streaming` is transient state, never storage.
+      const persistable = messages.map(({ streaming: _s, ...rest }) => rest)
+      localStorage.setItem(key, JSON.stringify(persistable))
     } catch {
       // Quota exceeded or storage disabled — the chat still works in memory.
     }
-  }, [messages, user?.id])
+  }, [messages, user?.id, isStreaming])
 
   // Keep the newest turn in view as the transcript grows.
   useEffect(() => {
@@ -128,44 +164,95 @@ export const ChatPage: React.FC = () => {
 
     // Snapshot the transcript we are about to send. Reading `messages` inside
     // the request would race the state update above.
+    // Empty turns are dropped: a reply that was stopped before any text
+    // arrived leaves a blank bubble, and the server's schema rejects an empty
+    // message with a 400 that would take the whole next question down with it.
     const transcript: ChatMessage[] = [
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ...messages
+        .filter((m) => m.content.trim())
+        .map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: question },
     ]
 
-    setMessages((prev) => [...prev, userTurn])
+    // The bubble the answer is written into. It goes up empty so the reply
+    // appears where the reader is already looking, rather than arriving all at
+    // once somewhere below.
+    const replyId = `a-${Date.now()}`
+
+    setMessages((prev) => [
+      ...prev,
+      userTurn,
+      { id: replyId, role: "assistant", content: "", timestamp: now(), streaming: true },
+    ])
     setInputVal("")
     setErrorMessage(null)
     setIsThinking(true)
 
-    try {
-      const res = await api.post<ChatResponse>("/chat", {
-        messages: transcript,
-      } satisfies ChatRequest)
+    const controller = new AbortController()
+    abortRef.current = controller
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: "assistant",
-          content: res.reply,
-          toolsUsed: res.toolsUsed,
-          timestamp: now(),
+    // Set by an `error` frame — an error is delivered inside a healthy stream,
+    // so it cannot be thrown from here and caught below.
+    let failed: string | null = null
+
+    const patch = (fn: (m: DisplayMessage) => DisplayMessage) =>
+      setMessages((prev) => prev.map((m) => (m.id === replyId ? fn(m) : m)))
+
+    try {
+      await api.stream(
+        "/chat/stream",
+        { messages: transcript } satisfies ChatRequest,
+        (raw) => {
+          const event = raw as ChatStreamEvent
+          switch (event.type) {
+            case "delta":
+              patch((m) => ({ ...m, content: m.content + event.text }))
+              break
+            case "tool":
+              patch((m) => ({ ...m, toolsUsed: [...(m.toolsUsed ?? []), event.name] }))
+              break
+            case "discard":
+              // That text was the model talking itself into a tool call, not
+              // the answer. Clear it and let the real reply start clean.
+              patch((m) => ({ ...m, content: "" }))
+              break
+            case "done":
+              patch((m) => ({ ...m, toolsUsed: event.toolsUsed, streaming: false }))
+              break
+            case "error":
+              failed =
+                event.code === "AI_NOT_CONFIGURED"
+                  ? "The assistant isn't switched on for this server yet."
+                  : event.message
+              break
+          }
         },
-      ])
+        controller.signal,
+      )
     } catch (err) {
-      // The question stays on screen so it can be retried without retyping.
-      setErrorMessage(
+      failed =
         err instanceof ApiError
           ? err.code === "AI_NOT_CONFIGURED"
             ? "The assistant isn't switched on for this server yet."
             : err.message
-          : "Could not reach the assistant. Please try again.",
-      )
+          : "Could not reach the assistant. Please try again."
     } finally {
+      abortRef.current = null
       setIsThinking(false)
+
+      // An empty reply bubble is never worth keeping, whether it ended in an
+      // error or was stopped before the first token. The question stays on
+      // screen either way, so it can be retried without retyping.
+      setMessages((prev) => prev.filter((m) => !(m.id === replyId && !m.content.trim())))
+      // Stopped mid-answer, or the stream died after some text arrived: keep
+      // what was written and stop the cursor blinking on it.
+      patch((m) => ({ ...m, streaming: false }))
+      if (failed) setErrorMessage(failed)
     }
   }
+
+  /** Abandon the answer in progress; whatever has been written so far stays. */
+  const stopStreaming = () => abortRef.current?.abort()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -258,6 +345,9 @@ export const ChatPage: React.FC = () => {
                 }`}
               >
                 {msg.content}
+                {msg.streaming && (
+                  <span className="ml-0.5 inline-block h-3 w-1.5 translate-y-px animate-pulse rounded-xs bg-indigo-500 align-middle" />
+                )}
               </div>
 
               {/* Where the answer came from — real tool calls, not a label. */}
@@ -297,7 +387,7 @@ export const ChatPage: React.FC = () => {
           </div>
         ))}
 
-        {isThinking && (
+        {isThinking && !messages.some((m) => m.streaming && m.content) && (
           <div className="flex items-center gap-3">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-indigo-600 text-white">
               <Bot className="h-4 w-4" />
@@ -331,15 +421,27 @@ export const ChatPage: React.FC = () => {
           placeholder="Ask about your leave, requests or company policy…"
           className="h-10 text-xs"
         />
-        <Button
-          type="submit"
-          size="sm"
-          disabled={isThinking || !inputVal.trim()}
-          className="h-10 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 px-4"
-        >
-          <Send className="h-4 w-4 mr-1.5" />
-          <span>Send</span>
-        </Button>
+        {isThinking ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={stopStreaming}
+            className="h-10 bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 px-4"
+          >
+            <Square className="h-3.5 w-3.5 mr-1.5 fill-current" />
+            <span>Stop</span>
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!inputVal.trim()}
+            className="h-10 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 px-4"
+          >
+            <Send className="h-4 w-4 mr-1.5" />
+            <span>Send</span>
+          </Button>
+        )}
       </form>
     </div>
   )

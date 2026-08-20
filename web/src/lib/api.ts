@@ -136,6 +136,106 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+/* ── server-sent events ────────────────────────────────────────── */
+
+/**
+ * POST a body and read back a stream of server-sent events.
+ *
+ * Not EventSource: that only does GET and cannot carry an Authorization
+ * header, and this API is bearer-token authenticated. So it is fetch plus a
+ * reader, parsing the `data:` frames by hand — which is the whole of SSE that
+ * we use.
+ *
+ * It lives here rather than in the page so the base URL, the bearer token and
+ * the one-shot 401 refresh keep working the same way they do for every other
+ * call.
+ */
+async function stream(
+  path: string,
+  body: unknown,
+  onEvent: (event: unknown) => void,
+  signal?: AbortSignal,
+  _retried = false,
+): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (tokenStore.access) headers.Authorization = `Bearer ${tokenStore.access}`
+
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch (err) {
+    // An abort is the user hitting stop, not a failure — let the caller ignore it.
+    if ((err as Error)?.name === 'AbortError') return
+    throw new ApiError(
+      'NETWORK_ERROR',
+      import.meta.env.DEV
+        ? `Could not reach the API at ${BASE_URL}. Is the server running?`
+        : 'Could not reach the server. It may be starting up — try again in a moment.',
+      0,
+    )
+  }
+
+  if (res.status === 401 && !_retried && tokenStore.refresh) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return stream(path, body, onEvent, signal, true)
+    tokenStore.clear()
+    throw new ApiError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.', 401)
+  }
+
+  // A failure before the stream opened still arrives as ordinary JSON — the
+  // server only switches to SSE once it knows the request is good.
+  if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
+    try {
+      const payload = (await res.json()) as ApiEnvelope<unknown>
+      if (!payload.success) throw new ApiError(payload.error.code, payload.error.message, res.status)
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+    }
+    throw new ApiError('BAD_RESPONSE', `Unexpected response from server (${res.status}).`, res.status)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new ApiError('BAD_RESPONSE', 'The server sent an empty stream.', res.status)
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      // Frames are separated by a blank line. Anything after the last one is a
+      // partial frame — keep it in the buffer until the rest arrives.
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+
+      for (const frame of frames) {
+        const data = frame
+          .split('\n')
+          .filter((l) => l.startsWith('data:'))
+          .map((l) => l.slice(5).trim())
+          .join('')
+        if (!data) continue
+        try {
+          onEvent(JSON.parse(data))
+        } catch {
+          // A frame we cannot parse is not worth killing the answer over.
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') return
+    throw err
+  }
+}
+
 /* ── verbs ─────────────────────────────────────────────────────── */
 
 export const api = {
@@ -143,6 +243,7 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  stream,
 
   /** Unauthenticated calls — login, refresh, invitation validation, activation. */
   publicPost: <T>(path: string, body?: unknown) =>

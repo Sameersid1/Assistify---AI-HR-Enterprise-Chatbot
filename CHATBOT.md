@@ -28,10 +28,11 @@ free tier — no card, no trial that expires.
 5. [Step 3 — the service that runs the conversation](#5-step-3--the-service-that-runs-the-conversation)
 6. [Step 4 — the route](#6-step-4--the-route)
 7. [Step 5 — the chat page](#7-step-5--the-chat-page)
-8. [What's still missing](#8-whats-still-missing)
-9. [How to run it](#9-how-to-run-it)
-10. [Two problems we hit and how we fixed them](#10-two-problems-we-hit-and-how-we-fixed-them)
-11. [Questions you will get asked](#11-questions-you-will-get-asked)
+8. [Step 6 — streaming the answer as it is written](#8-step-6--streaming-the-answer-as-it-is-written)
+9. [What's still missing](#9-whats-still-missing)
+10. [How to run it](#10-how-to-run-it)
+11. [Two problems we hit and how we fixed them](#11-two-problems-we-hit-and-how-we-fixed-them)
+12. [Questions you will get asked](#12-questions-you-will-get-asked)
 
 ---
 
@@ -350,7 +351,112 @@ would send the conversation *without* the question just typed.
 
 ---
 
-## 8. What's still missing
+## 8. Step 6 — streaming the answer as it is written
+
+At first the chat sat silent for three or four seconds and then dropped the
+whole answer in at once. It worked, but it felt broken — you could not tell
+whether it was thinking or had crashed. Now the words appear as Gemini writes
+them, the way ChatGPT does.
+
+### The idea
+
+Normally a web request is one question and one answer: you ask, you wait, you
+get everything. Streaming keeps the connection open and sends the answer in
+small pieces as it is produced.
+
+The technique is called **SSE — Server-Sent Events**. The server holds the
+response open and writes lines like this, one at a time:
+
+```
+data: {"type":"tool","name":"get_my_leave_balance"}
+
+data: {"type":"delta","text":"Arjun,"}
+
+data: {"type":"delta","text":" you have 3 casual leave days left."}
+
+data: {"type":"done","toolsUsed":["get_my_leave_balance"]}
+```
+
+The browser reads them as they arrive and adds each `delta` to the reply
+bubble. Five kinds of message travel down this pipe:
+
+| Event | Meaning |
+|---|---|
+| `tool` | A tool was just called — the chip appears immediately, before any text |
+| `delta` | A piece of the answer, appended to what is already on screen |
+| `discard` | Throw away the text so far and start the bubble again (explained below) |
+| `done` | The answer is finished, with the final list of tools used |
+| `error` | Something failed — shown as a message instead of a dead, silent stream |
+
+### What we added
+
+- `chatStream()` in `chat.service.ts` — the same loop as before, but using
+  `generateContentStream` and reporting each piece as it arrives.
+- `chatStreamController` in `chat.controller.ts` — holds the connection open
+  and writes the events.
+- `POST /api/v1/chat/stream` — the new route. The old `POST /api/v1/chat` still
+  works and still returns the whole answer at once.
+- `api.stream()` in `web/src/lib/api.ts` — reads the pieces in the browser.
+- A **Stop** button, which replaces Send while an answer is being written.
+
+**The important part for your viva:** the streaming path shares `prepare()` and
+`resolveCalls()` with the old one. It builds the tool list from the same
+`buildTools(auth)` and uses the same system prompt. If streaming had its own
+copy of that code, someone could later fix a permission bug in one path and not
+the other. Same security, one implementation, two ways of delivering it.
+
+### Why `discard` exists
+
+Occasionally the model says something like "Let me check that for you…" and
+*then* calls a tool. That sentence is it thinking out loud, not the answer. If
+we left it on screen the reader would end up with two answers stuck together.
+So when a round ends in a tool call, the server sends `discard`, the browser
+empties the bubble, and the real answer starts clean.
+
+### Three bugs we hit building this
+
+**1. Every stream aborted instantly and returned nothing.**
+We wanted to stop generating if the user closed the tab, so we listened for the
+connection closing:
+
+```ts
+req.on('close', () => controller.abort());   // WRONG
+```
+
+`req` is the *incoming* request. By the time our code runs, Express has already
+finished reading the request body — so `req` fires `close` immediately, every
+single time. Every answer cancelled itself before producing a word. The fix is
+to watch the *outgoing* response instead, which closes only when the browser
+really goes away:
+
+```ts
+res.on('close', () => controller.abort());   // RIGHT
+```
+
+**2. Reloading the page wiped the conversation.**
+The transcript is saved to `localStorage`. Two pieces of code run when the page
+loads: one *loads* the saved messages, one *saves* the current messages. On a
+reload the saving code sometimes ran first, while the list was still empty, and
+wrote an empty list over the real conversation. Now saving refuses to overwrite
+a saved conversation with an empty one.
+
+**3. Pressing Stop broke the next question.**
+Stopping before any text arrived left an empty message bubble. That empty
+message was then sent with the next question, and the server rejects empty
+messages — so the following question failed with a `400` error. Now empty
+bubbles are removed and never sent.
+
+### How to demonstrate it
+
+Ask something that needs a tool, like *"How many casual leave days do I have
+left?"* Watch the order: the grey **Your leave balance** chip appears first,
+proving the assistant looked the number up, and only then does the sentence
+type itself out. Ask a long question and press **Stop** halfway — the words
+written so far stay on screen and you can carry on asking.
+
+---
+
+## 9. What's still missing
 
 Be upfront about this — it is the honest answer and it is a short list.
 
@@ -359,13 +465,12 @@ Be upfront about this — it is the honest answer and it is a short list.
 | **Approving via chat** | Deliberate, not missing. Deciding someone else's leave changes their balance and is recorded against you, so it belongs on the approvals page where the request is on screen. Applying and cancelling your own leave is reversible, which is why those are allowed. |
 | **PDF parsing on the server** | Text is extracted in the browser, which reads .txt/.md/.csv natively. For a PDF you open it, copy the text and paste it in. |
 | **Retrieval quality measurement** | Search works but we have not measured how often it finds the right passage. |
-| **Streaming** | The answer appears all at once after a few seconds, instead of word by word. |
 | **Tool memory across turns** | Gemini sees its own past *answers* but not the raw data behind them. Fine in practice, because the answer carries the facts. |
 | **Ticket tools** | The tickets module does not exist on the backend yet. |
 
 ---
 
-## 9. How to run it
+## 10. How to run it
 
 **1. Get a free API key** from
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Sign in with a
@@ -410,7 +515,7 @@ assistant answered. The employee case should be a chat bubble.
 
 ---
 
-## 10. Two problems we hit and how we fixed them
+## 11. Two problems we hit and how we fixed them
 
 Worth knowing, because they are the kind of thing an examiner may ask about.
 
@@ -447,7 +552,7 @@ permission system. That is why the tool list is built per user.
 
 ---
 
-## 11. Questions you will get asked
+## 12. Questions you will get asked
 
 **"Is the AI connected to your database?"**
 > Not directly. It can request specific functions we wrote, and our server runs

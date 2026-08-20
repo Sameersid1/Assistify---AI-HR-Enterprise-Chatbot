@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../middleware/error';
 import { requireAuth } from '../../middleware/auth';
-import { chatController } from './chat.controller';
+import { chatController, chatStreamController } from './chat.controller';
 
 const router = Router();
 
@@ -11,5 +11,10 @@ const router = Router();
  * decided from their role in chat.tools.ts.
  */
 router.post('/', requireAuth, asyncHandler(chatController));
+
+// Same guard, same tools — only the delivery differs. asyncHandler still wraps
+// it so a failure *before* the SSE headers go out (a bad body, no API key)
+// still reaches the normal error handler as JSON.
+router.post('/stream', requireAuth, asyncHandler(chatStreamController));
 
 export default router;

@@ -230,19 +230,81 @@ async function runTool(tool: ChatTool, args: Record<string, unknown>): Promise<P
   }
 }
 
-export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatResult> {
+interface Prepared {
+  ai: GoogleGenAI;
+  tools: ChatTool[];
+  byName: Map<string, ChatTool>;
+  systemInstruction: string;
+  contents: Content[];
+}
+
+/**
+ * Everything both the buffered and the streaming path need, built once.
+ *
+ * Kept together so the two entry points cannot drift apart — the tool list and
+ * the system prompt are the security-relevant half of this feature, and a
+ * streaming path that quietly built a different tool list would be a hole.
+ */
+async function prepare(auth: AuthContext, input: ChatInput): Promise<Prepared> {
   const ai = await getClient();
   const tools = buildTools(auth);
-  const byName = new Map(tools.map((t) => [t.declaration.name as string, t]));
+  return {
+    ai,
+    tools,
+    byName: new Map(tools.map((t) => [t.declaration.name as string, t])),
+    systemInstruction: buildSystemPrompt(await describeCaller(auth), isApprover(auth.role)),
+    // Gemini names the assistant's side of a transcript "model", not "assistant".
+    contents: input.messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    })),
+  };
+}
 
-  const systemInstruction = buildSystemPrompt(await describeCaller(auth), isApprover(auth.role));
+/**
+ * Run every tool the model asked for and append both halves to the transcript.
+ *
+ * The model's own request has to be echoed back before the answers; dropping
+ * that turn breaks the pairing between call and response and Gemini rejects
+ * the next request.
+ */
+async function resolveCalls(
+  calls: { name?: string; args?: Record<string, unknown> }[],
+  byName: Map<string, ChatTool>,
+  contents: Content[],
+  toolsUsed: string[],
+  onTool?: (name: string) => void,
+): Promise<void> {
+  contents.push({
+    role: 'model',
+    parts: calls.map((functionCall) => ({ functionCall })),
+  });
 
-  // Gemini names the assistant's side of a transcript "model", not "assistant".
-  const contents: Content[] = input.messages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
+  const results = await Promise.all(
+    calls.map(async (call): Promise<Part> => {
+      const tool = byName.get(call.name ?? '');
+      if (!tool) {
+        // Only reachable if the model invents a name. Told, not thrown, so it
+        // can correct itself rather than the message dying.
+        return {
+          functionResponse: {
+            name: call.name ?? 'unknown',
+            response: { error: `No such tool: ${call.name}` },
+          },
+        };
+      }
+      const name = tool.declaration.name as string;
+      toolsUsed.push(name);
+      onTool?.(name);
+      return runTool(tool, call.args ?? {});
+    }),
+  );
 
+  contents.push({ role: 'user', parts: results });
+}
+
+export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatResult> {
+  const { ai, tools, byName, systemInstruction, contents } = await prepare(auth, input);
   const toolsUsed: string[] = [];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
@@ -271,29 +333,7 @@ export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatRes
       };
     }
 
-    // Echo the model's request back into the transcript before answering it;
-    // dropping this turn breaks the pairing between call and response.
-    contents.push({ role: 'model', parts: calls.map((functionCall) => ({ functionCall })) });
-
-    const results = await Promise.all(
-      calls.map(async (call): Promise<Part> => {
-        const tool = byName.get(call.name ?? '');
-        if (!tool) {
-          // Only reachable if the model invents a name. Told, not thrown, so it
-          // can correct itself rather than the message dying.
-          return {
-            functionResponse: {
-              name: call.name ?? 'unknown',
-              response: { error: `No such tool: ${call.name}` },
-            },
-          };
-        }
-        toolsUsed.push(tool.declaration.name as string);
-        return runTool(tool, call.args ?? {});
-      }),
-    );
-
-    contents.push({ role: 'user', parts: results });
+    await resolveCalls(calls, byName, contents, toolsUsed);
   }
 
   // Still asking for tools after MAX_TOOL_ROUNDS — stop rather than loop.
@@ -302,4 +342,105 @@ export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatRes
       "Sorry — I couldn't finish looking that up. Try asking about one thing at a time.",
     toolsUsed,
   };
+}
+
+/* ── streaming ──────────────────────────────────────────────────────────── */
+
+/**
+ * What the client is told as the answer is produced.
+ *
+ * `discard` exists because a round that ends in a tool call may have emitted
+ * some prose first ("Let me check that for you…"). That text is scaffolding for
+ * the tool call, not part of the answer, so the client throws away what it has
+ * shown so far and starts the bubble again from the real reply. Gemini rarely
+ * does this, but a client that cannot handle it shows the user two answers
+ * glued together.
+ */
+export type ChatStreamEvent =
+  | { type: 'tool'; name: string }
+  | { type: 'delta'; text: string }
+  | { type: 'discard' }
+  | { type: 'done'; toolsUsed: string[] }
+  | { type: 'error'; code: string; message: string };
+
+/**
+ * The same conversation as chat(), delivered as it is written.
+ *
+ * Identical tools, identical system prompt, identical tenancy — this shares
+ * prepare() and resolveCalls() with the buffered path precisely so that
+ * "streaming" cannot become a second, less careful implementation.
+ */
+export async function chatStream(
+  auth: AuthContext,
+  input: ChatInput,
+  emit: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { ai, tools, byName, systemInstruction, contents } = await prepare(auth, input);
+  const toolsUsed: string[] = [];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    const calls: { name?: string; args?: Record<string, unknown> }[] = [];
+    let emittedText = false;
+    let sawAnyText = false;
+
+    try {
+      const stream = await ai.models.generateContentStream({
+        model: MODEL,
+        contents,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
+          ...(signal ? { abortSignal: signal } : {}),
+        },
+      });
+
+      for await (const chunk of stream) {
+        if (signal?.aborted) return;
+
+        for (const call of chunk.functionCalls ?? []) calls.push(call);
+
+        const text = chunk.text;
+        if (text) {
+          sawAnyText = true;
+          // Held back once a tool call has appeared in this round — that text
+          // is about to be discarded anyway, so showing it would only flicker.
+          if (calls.length === 0) {
+            emittedText = true;
+            emit({ type: 'delta', text });
+          }
+        }
+      }
+    } catch (err) {
+      if (signal?.aborted) return;
+      const appErr = describeAiError(err);
+      emit({ type: 'error', code: appErr.code, message: appErr.message });
+      return;
+    }
+
+    if (calls.length === 0) {
+      if (!sawAnyText) {
+        emit({
+          type: 'delta',
+          text: "Sorry — I couldn't put together an answer for that. Try rephrasing?",
+        });
+      }
+      emit({ type: 'done', toolsUsed });
+      return;
+    }
+
+    if (emittedText) emit({ type: 'discard' });
+
+    // Announced through resolveCalls so the chips only ever name tools that
+    // really exist — a hallucinated tool name is handled, not advertised.
+    await resolveCalls(calls, byName, contents, toolsUsed, (name) =>
+      emit({ type: 'tool', name }),
+    );
+  }
+
+  emit({
+    type: 'delta',
+    text: "Sorry — I couldn't finish looking that up. Try asking about one thing at a time.",
+  });
+  emit({ type: 'done', toolsUsed });
 }
