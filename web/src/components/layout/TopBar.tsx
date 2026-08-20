@@ -1,7 +1,6 @@
 import React from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import {
-  Bell,
   Search,
   Menu,
   Moon,
@@ -10,6 +9,7 @@ import {
 } from "lucide-react"
 import { useAuth, type UserRole } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
+import { Notifications } from "./Notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -138,42 +138,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
           </kbd>
         </div>
 
-        {/* Notification Bell */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className="relative h-8.5 w-8.5 rounded-lg border-zinc-200 text-zinc-700 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-300 dark:hover:text-white"
-              aria-label="Notifications"
-            >
-              <Bell className="h-4.5 w-4.5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-indigo-600 ring-2 ring-white dark:ring-zinc-950" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 p-2">
-            <div className="flex items-center justify-between px-2.5 py-1.5">
-              <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Notifications
-              </span>
-              <Badge variant="default" className="text-xs py-0.5 px-2 font-mono">
-                2 New
-              </Badge>
-            </div>
-            <DropdownMenuSeparator />
-            <div className="space-y-1 py-1">
-              <div className="rounded-lg p-2.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/60 cursor-pointer space-y-0.5">
-                <p className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">
-                  Leave request submitted
-                </p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Rohan Patel requested 3 days Casual Leave.
-                </p>
-                <span className="text-[11px] text-zinc-400">2h ago</span>
-              </div>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Notifications />
 
         {/* User Profile Avatar Dropdown */}
         <DropdownMenu>
