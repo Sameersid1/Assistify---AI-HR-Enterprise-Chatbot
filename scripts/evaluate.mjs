@@ -35,7 +35,13 @@ const args = Object.fromEntries(
 );
 
 const API = (args.api || process.env.API_URL || '').replace(/\/+$/, '');
-const DELAY_MS = Number(args.delay ?? 4000);
+// 30s, not the 4s this used to default to. The binding free-tier limit is
+// tokens per minute (Groq allows 8,000) and one prompt here costs about 4,000
+// across its tool round and its answer round — so roughly two prompts a minute
+// is the real ceiling. At 4s this run would collapse into rate-limit errors
+// about three prompts in and produce a table full of holes, which is worse
+// than useless in a paper: it looks like measured failure.
+const DELAY_MS = Number(args.delay ?? 30000);
 
 if (!API || !args.employee || !args.hr) {
   console.error(`
@@ -46,7 +52,7 @@ Missing arguments.
   --api        Base API URL, e.g. https://assistify-api.onrender.com/api/v1
   --employee   Credentials for an account with the employee role
   --hr         Credentials for an account with the hr role
-  --delay      Milliseconds between prompts (default 4000, for free-tier quota)
+  --delay      Milliseconds between prompts (default 30000 — free-tier token/min limit)
   --json       Also write evaluation-results.json
 `);
   process.exit(1);
