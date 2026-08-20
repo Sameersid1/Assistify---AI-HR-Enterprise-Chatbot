@@ -472,11 +472,23 @@ The chatbot now talks to **two** providers:
 
 | | Provider | Free tier | Card needed |
 |---|---|---|---|
-| **Primary** | **Groq** (`llama-3.3-70b-versatile`) | ~14,400 requests/day | No |
+| **Primary** | **Groq** (`qwen/qwen3.6-27b`) | 1,000 req/min, 8,000 tokens/min | No |
 | **Fallback** | Gemini (`gemini-2.5-flash`) | ~20 requests/day | No |
 
 If Groq is rate-limited or has an outage, the request automatically retries on
 Gemini. Nobody sees anything except an answer.
+
+**The limit that actually bites is tokens per minute, not requests per day.**
+Groq allows 8,000 tokens/minute and one question costs about 2,000 (the system
+prompt and eight tool descriptions are resent every round). That works out at
+roughly two questions a minute — fine for someone asking and reading answers,
+tight if you click rapidly through a script. If you hit it, waiting a minute
+clears it, and the error now says so.
+
+Groq is also *fast*: about 700 tokens/second, so a full answer streams in
+around 100ms. The streaming machinery still works exactly as described in
+section 8 — 81 separate chunks for a long answer — they simply all arrive
+faster than the eye follows.
 
 Gemini is kept even though its quota is tiny, because **document search needs it
 anyway** — the embedding model that powers Company Policies is Google's, and
