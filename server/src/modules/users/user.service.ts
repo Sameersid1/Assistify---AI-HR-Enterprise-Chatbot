@@ -31,6 +31,8 @@ export interface PublicUser {
   employeeId?: string | null;
   department?: string | null;
   designation?: string | null;
+  /** Decides leave entitlement and which policy documents apply. */
+  employmentType?: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +48,7 @@ export function toPublicUser(user: any): PublicUser {
     employeeId: user.employeeId ?? null,
     department: user.department ?? null,
     designation: user.designation ?? null,
+    employmentType: user.employmentType ?? null,
   };
 }
 

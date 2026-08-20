@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react"
-import { Search, Users2, Loader2, AlertCircle, Inbox, Mail } from "lucide-react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { Search, Users2, Loader2, AlertCircle, Inbox, Mail, UserPlus } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { InviteEmployeeModal } from "@/components/modals/InviteEmployeeModal"
+import { useAuth } from "@/context/AuthContext"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
-import type { ApiUser, UserRole, UserStatus } from "@/lib/types"
+import { EMPLOYMENT_TYPE_LABELS, type ApiUser, type EmploymentType, type UserRole, type UserStatus } from "@/lib/types"
 
 const ROLE_LABELS: Record<UserRole, string> = {
   employee: "Employee",
@@ -29,27 +32,33 @@ const initials = (name: string) =>
     .join("")
 
 export const EmployeesPage: React.FC = () => {
+  const { user } = useAuth()
   const [people, setPeople] = useState<ApiUser[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
+  const [isInviting, setIsInviting] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    api
-      .get<{ users: ApiUser[] }>("/users")
-      .then((res) => {
-        if (!cancelled) setPeople(res.users)
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setPeople([])
-          setError(err instanceof ApiError ? err.message : "Could not load the directory.")
-        }
-      })
-    return () => {
-      cancelled = true
+  /**
+   * Only HR. Not a UI preference — the server's role-creation whitelist reads
+   * `hr: ['employee']`, and an admin inviting an employee is refused with
+   * ROLE_NOT_ALLOWED. Showing the button to anyone else offers an action that
+   * cannot succeed.
+   */
+  const canInvite = user?.role === "hr"
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get<{ users: ApiUser[] }>("/users")
+      setPeople(res.users)
+    } catch (err) {
+      setPeople([])
+      setError(err instanceof ApiError ? err.message : "Could not load the directory.")
     }
   }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   // Filtered in the browser: the endpoint returns one tenant's people, which is
   // a list a person could scroll. Server-side search earns its place when it
@@ -79,14 +88,27 @@ export const EmployeesPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, email or department"
-            className="h-9 pl-9 text-xs"
-          />
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, email or department"
+              className="h-9 pl-9 text-xs"
+            />
+          </div>
+
+          {canInvite && (
+            <Button
+              size="sm"
+              onClick={() => setIsInviting(true)}
+              className="h-9 shrink-0 gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              Invite Employee
+            </Button>
+          )}
         </div>
       </div>
 
@@ -114,7 +136,9 @@ export const EmployeesPage: React.FC = () => {
             <p className="text-xs text-zinc-500 mt-0.5">
               {query
                 ? "Try a different name, email or department."
-                : "People appear here once they have been invited."}
+                : canInvite
+                  ? "Invite someone to get started."
+                  : "People appear here once they have been invited."}
             </p>
           </div>
         </div>
@@ -144,6 +168,14 @@ export const EmployeesPage: React.FC = () => {
 
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
                 {person.designation && <span>{person.designation}</span>}
+                {person.employmentType && person.employmentType !== 'FULL_TIME' && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] py-0 px-1.5 border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"
+                  >
+                    {EMPLOYMENT_TYPE_LABELS[person.employmentType as EmploymentType]}
+                  </Badge>
+                )}
                 {person.department && (
                   <span className="rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5">
                     {person.department}
@@ -163,6 +195,12 @@ export const EmployeesPage: React.FC = () => {
           ))}
         </div>
       )}
+
+      <InviteEmployeeModal
+        isOpen={isInviting}
+        onClose={() => setIsInviting(false)}
+        onInvited={() => void load()}
+      />
 
       {people !== null && people.length > 0 && (
         <p className="flex items-center gap-1.5 text-[11px] text-zinc-400">

@@ -3,6 +3,7 @@
 // it — the one place that needs the class at runtime uses a dynamic import.
 import type { ToolDeclaration } from './llm.types';
 import { CompanyModel } from '../companies/company.model';
+import { UserModel } from '../users/user.model';
 import * as leaveService from '../leave/leave.service';
 import * as userService from '../users/user.service';
 import * as documentService from '../documents/document.service';
@@ -117,21 +118,32 @@ function selfServiceTools(auth: AuthContext): ChatTool[] {
       declaration: {
         name: 'get_company_leave_policy',
         description:
-          "Get the company's annual leave entitlement — how many annual, casual " +
-          'and sick days a full-time employee is allocated per year. Call this for ' +
-          'questions about entitlement or policy, as opposed to how many days this ' +
-          'particular person has left (use get_my_leave_balance for that).',
+          "Get the leave entitlement that applies to THIS person — how many " +
+          'annual, casual and sick days they are allocated per year. ' +
+          'Entitlement differs by employment type: an intern is not entitled to ' +
+          'what a full-time employee is. This returns the numbers for the person ' +
+          'you are talking to, so use it as-is and do not adjust it or compare it ' +
+          'with figures for other kinds of employee. Call this for questions ' +
+          'about entitlement or policy, as opposed to how many days this ' +
+          'particular person has LEFT (use get_my_leave_balance for that).',
       },
       run: async () => {
-        const company = await CompanyModel.findById(auth.companyId).select('name leavePolicy');
+        const [company, user] = await Promise.all([
+          CompanyModel.findById(auth.companyId).select(
+            'name leavePolicy leavePolicyByEmploymentType',
+          ),
+          UserModel.findById(auth.userId).select('employmentType'),
+        ]);
         if (!company) return { error: 'Company record not found' };
+
+        // Resolved through the same function that allocates the balance, so the
+        // figure quoted here and the figure in their balance cannot disagree.
+        // They did before this: an intern was allocated six days and told
+        // eighteen, in the same conversation.
         return {
           company: company.name,
-          daysPerYear: {
-            annual: company.leavePolicy.annual,
-            casual: company.leavePolicy.casual,
-            sick: company.leavePolicy.sick,
-          },
+          appliesTo: user?.employmentType ?? 'FULL_TIME',
+          daysPerYear: leaveService.entitlementFor(company, user?.employmentType),
         };
       },
     },

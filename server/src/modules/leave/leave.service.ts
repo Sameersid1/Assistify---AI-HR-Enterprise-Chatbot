@@ -1,6 +1,7 @@
 import type { Types } from 'mongoose';
 import { LeaveBalanceModel, LeaveRequestModel, LEAVE_TYPES, type LeaveType } from './leave.model';
 import { CompanyModel } from '../companies/company.model';
+import { UserModel } from '../users/user.model';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { scoped } from '../../shared/tenantQuery';
 import { countWorkingDays, startOfTodayUtc, toUtcDate } from '../../shared/workdays';
@@ -81,19 +82,61 @@ function toPublicRequest(request: any): PublicLeaveRequest {
  * Called at invitation time (so a new hire has balances before they log in) and
  * lazily on read/apply, because users seeded before this module existed have none.
  */
+export interface Entitlement {
+  annual: number;
+  casual: number;
+  sick: number;
+}
+
+/**
+ * What one engagement type is entitled to at this company.
+ *
+ * The single place that answers "how many days does this person get". Both the
+ * balance allocator below and the assistant's policy tool go through it, which
+ * is what stops the two disagreeing — an intern being allocated six days while
+ * being told they have eighteen is a contradiction the person sees, and it is
+ * exactly what happened before this existed.
+ */
+export function entitlementFor(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  company: any,
+  employmentType: string | null | undefined,
+): Entitlement {
+  const base = company.leavePolicy;
+  const override = employmentType
+    ? company.leavePolicyByEmploymentType?.[employmentType]
+    : undefined;
+
+  // An override may set only some types; each falls back independently.
+  return {
+    annual: override?.annual ?? base.annual,
+    casual: override?.casual ?? base.casual,
+    sick: override?.sick ?? base.sick,
+  };
+}
+
 export async function ensureBalances(
   companyId: Types.ObjectId,
   userId: Types.ObjectId,
   year: number = new Date().getUTCFullYear(),
 ): Promise<void> {
-  const company = await CompanyModel.findById(companyId).select('leavePolicy');
+  const [company, user] = await Promise.all([
+    CompanyModel.findById(companyId).select('leavePolicy leavePolicyByEmploymentType'),
+    UserModel.findById(userId).select('employmentType'),
+  ]);
   if (!company) throw new NotFoundError('Company not found');
+
+  const entitlement = entitlementFor(company, user?.employmentType);
 
   await LeaveBalanceModel.bulkWrite(
     LEAVE_TYPES.map((type) => ({
       updateOne: {
         filter: { companyId, userId, year, type },
-        update: { $setOnInsert: { allocated: company.leavePolicy[type], used: 0, pending: 0 } },
+        // $setOnInsert, so an existing balance is never rewritten. Someone's
+        // allocation is a record of what they were granted for that year, not a
+        // live view of current policy — changing policy in March must not
+        // silently remove days a person has already booked against.
+        update: { $setOnInsert: { allocated: entitlement[type], used: 0, pending: 0 } },
         upsert: true,
       },
     })),

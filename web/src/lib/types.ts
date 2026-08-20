@@ -18,6 +18,8 @@ export interface ApiUser {
   department?: string
   designation?: string
   employeeId?: string
+  /** Decides leave entitlement and which policy documents apply. */
+  employmentType?: EmploymentType
 }
 
 /** Shape the UI components consume. Normalised from ApiUser at the boundary. */
