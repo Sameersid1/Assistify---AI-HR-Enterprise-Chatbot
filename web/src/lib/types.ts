@@ -160,12 +160,28 @@ export interface ApplyLeaveResponse {
 
 /* ── Policy documents ───────────────────────────────────────────────────── */
 
+/** The engagement types a document's audience can be limited to. */
+export const EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'] as const
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number]
+
+export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  FULL_TIME: 'Full-time',
+  PART_TIME: 'Part-time',
+  CONTRACT: 'Contract',
+  INTERN: 'Intern',
+}
+
 export interface CompanyDocument {
   id: string
   title: string
   /** How many passages it was split into for retrieval. */
   chunkCount: number
   createdAt: string
+  /**
+   * Who the document applies to. EMPTY MEANS EVERYONE — the assistant reads a
+   * document only when this is empty or contains the reader's own type.
+   */
+  audienceEmploymentTypes: EmploymentType[]
 }
 
 export interface DocumentSearchHit {

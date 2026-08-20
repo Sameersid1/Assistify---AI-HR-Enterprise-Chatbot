@@ -4,6 +4,7 @@ import { AppError, NotFoundError } from '../../shared/errors';
 import { scoped } from '../../shared/tenantQuery';
 import { toObjectId } from '../../shared/objectId';
 import { DocumentModel, DocumentChunkModel } from './document.model';
+import { UserModel } from '../users/user.model';
 import type { AuthContext } from '../../shared/types';
 import type { UploadDocumentInput } from './document.schema';
 
@@ -211,6 +212,8 @@ export interface PublicDocument {
   title: string;
   chunkCount: number;
   createdAt: string;
+  /** Empty means the document applies to everyone. */
+  audienceEmploymentTypes: string[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,6 +223,7 @@ function toPublicDocument(doc: any): PublicDocument {
     title: doc.title,
     chunkCount: doc.chunkCount,
     createdAt: doc.createdAt.toISOString(),
+    audienceEmploymentTypes: doc.audienceEmploymentTypes ?? [],
   };
 }
 
@@ -237,12 +241,15 @@ export async function uploadDocument(
   // document behind that would answer questions from a fraction of its content.
   const embeddings = await embedDocuments(chunks);
 
+  const audienceEmploymentTypes = input.audienceEmploymentTypes ?? [];
+
   const doc = await DocumentModel.create({
     companyId: auth.companyId,
     title: input.title,
     content: input.content,
     chunkCount: chunks.length,
     uploadedBy: auth.userId,
+    audienceEmploymentTypes,
   });
 
   await DocumentChunkModel.insertMany(
@@ -252,6 +259,8 @@ export async function uploadDocument(
       chunkIndex,
       text,
       embedding: embeddings[chunkIndex],
+      // Carried onto the chunk so retrieval can filter without a join.
+      audienceEmploymentTypes,
     })),
   );
 
@@ -290,12 +299,44 @@ export interface SearchHit {
  * company's policies can never surface in another's answer regardless of how
  * the question is phrased.
  */
+/**
+ * Every passage this caller is allowed to be answered from.
+ *
+ * ⚠️ THE FILTER BELONGS IN THE QUERY, NOT AFTER THE RANKING.
+ *
+ * It is tempting to rank everything and drop the passages that do not apply
+ * afterwards. That is wrong twice over. A full-time policy passage would still
+ * occupy one of the four top-k slots, so an intern asking about leave would
+ * silently receive *less* context rather than different context — and the
+ * passage would have been loaded and compared regardless, which is the work the
+ * filter exists to avoid.
+ *
+ * The employment type is read from the caller's own record, never from anything
+ * the request carried. This is the same rule that makes `scoped()` trustworthy:
+ * a caller can phrase a question however they like and still cannot widen the
+ * set of documents their assistant can see.
+ */
+export async function audienceFilter(auth: AuthContext): Promise<Record<string, unknown>> {
+  const user = await UserModel.findById(auth.userId).select('employmentType');
+  const employmentType = user?.employmentType ?? 'FULL_TIME';
+
+  return {
+    $or: [
+      // Empty audience means the document applies to everyone.
+      { audienceEmploymentTypes: { $size: 0 } },
+      { audienceEmploymentTypes: employmentType },
+    ],
+  };
+}
+
 export async function searchDocuments(
   auth: AuthContext,
   query: string,
   topK: number = DEFAULT_TOP_K,
 ): Promise<SearchHit[]> {
-  const chunks = await DocumentChunkModel.find(scoped(auth)).populate('documentId', 'title');
+  const chunks = await DocumentChunkModel.find(
+    scoped(auth, await audienceFilter(auth)),
+  ).populate('documentId', 'title');
   if (chunks.length === 0) return [];
 
   const queryEmbedding = await embedQuery(query);

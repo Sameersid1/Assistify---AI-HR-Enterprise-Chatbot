@@ -8,6 +8,7 @@ import {
   Search,
   Inbox,
   X,
+  Users2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
-import type { CompanyDocument, DocumentSearchHit } from "@/lib/types"
+import {
+  EMPLOYMENT_TYPES,
+  EMPLOYMENT_TYPE_LABELS,
+  type CompanyDocument,
+  type DocumentSearchHit,
+  type EmploymentType,
+} from "@/lib/types"
 
 /** Roles allowed to publish — mirrors the `publishers` guard on the API. */
 const PUBLISHER_ROLES = new Set(["hr", "admin", "super_admin"])
@@ -34,6 +41,8 @@ export const DocumentsPage: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
+  /** Empty = applies to everyone. */
+  const [audience, setAudience] = useState<EmploymentType[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -84,8 +93,10 @@ export const DocumentsPage: React.FC = () => {
       await api.post<{ document: CompanyDocument }>("/documents", {
         title: title.trim(),
         content: content.trim(),
+        audienceEmploymentTypes: audience,
       })
       setTitle("")
+      setAudience([])
       setContent("")
       setShowUpload(false)
       await load()
@@ -213,6 +224,53 @@ export const DocumentsPage: React.FC = () => {
             </p>
           </div>
 
+          {/* Who the document applies to.
+              Nothing ticked means everyone, which is right for a handbook. Tick
+              a type only for a policy that genuinely differs by engagement —
+              the assistant will then never read it to anyone else. */}
+          <div className="space-y-2 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
+            <div className="flex items-center gap-1.5">
+              <Users2 className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
+                Who does this apply to?
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {EMPLOYMENT_TYPES.map((type) => {
+                const checked = audience.includes(type)
+                return (
+                  <label
+                    key={type}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                      checked
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300'
+                        : 'border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setAudience((prev) =>
+                          e.target.checked ? [...prev, type] : prev.filter((t) => t !== type),
+                        )
+                      }
+                      className="h-3 w-3 rounded-xs"
+                    />
+                    {EMPLOYMENT_TYPE_LABELS[type]}
+                  </label>
+                )
+              })}
+            </div>
+
+            <p className="text-[10px] text-zinc-400">
+              {audience.length === 0 || audience.length === EMPLOYMENT_TYPES.length
+                ? 'Everyone. Leave it like this for handbooks and general procedures.'
+                : `Only ${audience.map((t) => EMPLOYMENT_TYPE_LABELS[t]).join(', ')} staff. The assistant will not read this to anybody else.`}
+            </p>
+          </div>
+
           {uploadError && (
             <Alert variant="destructive" className="py-2">
               <AlertCircle className="h-4 w-4" />
@@ -334,9 +392,24 @@ export const DocumentsPage: React.FC = () => {
                   <FileText className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                    {doc.title}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                      {doc.title}
+                    </p>
+                    {/* Only shown when the document is restricted. An "Everyone"
+                        badge on almost every row would be noise, and the absence
+                        of a badge already says it. */}
+                    {doc.audienceEmploymentTypes.length > 0 &&
+                      doc.audienceEmploymentTypes.map((type) => (
+                        <Badge
+                          key={type}
+                          variant="outline"
+                          className="text-[10px] py-0 px-1.5 border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"
+                        >
+                          {EMPLOYMENT_TYPE_LABELS[type]} only
+                        </Badge>
+                      ))}
+                  </div>
                   <p className="text-[11px] text-zinc-500">
                     {doc.chunkCount} passage{doc.chunkCount === 1 ? "" : "s"} indexed ·{" "}
                     {new Date(doc.createdAt).toLocaleDateString("en-GB", {

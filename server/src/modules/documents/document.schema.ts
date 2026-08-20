@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EMPLOYMENT_TYPES } from '../../shared/types';
 
 /**
  * POST /documents
@@ -17,6 +18,18 @@ export const uploadDocumentSchema = z.object({
     // Roughly 200KB of text. Embedding cost scales with length, and a document
     // this large is almost always a whole handbook that should be split.
     .max(200_000, 'That document is too large — split it into sections'),
+
+  /**
+   * Who the document applies to. Omitted or empty means everyone, which is the
+   * right default for a handbook and the only value pre-existing documents have.
+   */
+  audienceEmploymentTypes: z
+    .array(z.enum(EMPLOYMENT_TYPES))
+    .max(EMPLOYMENT_TYPES.length)
+    .optional()
+    // Listing every type is the same statement as listing none, and storing it
+    // as [] keeps one representation of "everyone" instead of two.
+    .transform((v) => (!v || v.length === EMPLOYMENT_TYPES.length ? [] : [...new Set(v)])),
 });
 export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>;
 

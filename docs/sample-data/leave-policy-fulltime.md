@@ -1,6 +1,7 @@
-# Leave Policy
+# Leave Policy — Full-Time Employees
 
-**Applies to:** All full-time employees
+**Applies to:** Full-time employees only
+**Upload with:** Full-time ticked, so interns never receive these rules
 **Effective:** 1 January 2026
 **Owner:** People Operations
 

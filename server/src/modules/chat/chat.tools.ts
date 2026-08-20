@@ -140,14 +140,18 @@ function selfServiceTools(auth: AuthContext): ChatTool[] {
       declaration: {
         name: 'search_company_policies',
         description:
-          "Search the company's uploaded policy documents and return the most " +
-          'relevant passages, each with the document title it came from. Call ' +
-          'this for any question about rules, entitlements, procedures or ' +
-          'conditions that is not simply a number from the leave records — ' +
-          'maternity leave, notice periods, remote work, expenses, conduct, ' +
-          'benefits. Search with the words the person used. An empty result ' +
-          'means nothing in the corpus covers it, which is worth saying: it is ' +
-          'not an invitation to answer from general knowledge.',
+          "Search the company's policy documents and return the most relevant " +
+          'passages, each with the document title it came from. Call this for ' +
+          'any question about rules, entitlements, procedures or conditions ' +
+          'that is not simply a number from the leave records — maternity ' +
+          'leave, notice periods, remote work, expenses, conduct, benefits, ' +
+          'lost ID cards, referrals. Search with the words the person used. ' +
+          'This searches the documents that apply to THIS person: company-wide ' +
+          'documents, plus any written specifically for their employment type. ' +
+          'Policies written for a different type of employee are not searched ' +
+          'and must not be described or speculated about. An empty result ' +
+          'means nothing that applies to them covers it, which is worth ' +
+          'saying: it is not an invitation to answer from general knowledge.',
         parametersJsonSchema: {
           type: 'object',
           properties: {

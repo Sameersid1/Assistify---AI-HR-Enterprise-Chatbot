@@ -5,6 +5,14 @@ export type Role = 'employee' | 'hr' | 'it_support' | 'admin' | 'super_admin';
 export type UserStatus = 'INVITED' | 'ACTIVE' | 'DEACTIVATED';
 
 /**
+ * How someone is engaged. Shared because it now decides two things: what leave
+ * they are entitled to, and which policy documents their assistant is allowed
+ * to read (see documents/document.service.ts).
+ */
+export const EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+/**
  * The authenticated caller context — FROZEN (M1 guide §Phase-1).
  * Populated by requireAuth from the verified JWT. Everyone depends on this shape.
  *   req.auth = { userId, companyId, role }
