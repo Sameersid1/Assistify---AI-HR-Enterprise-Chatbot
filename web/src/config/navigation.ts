@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   MessageSquare,
+  MessageSquareQuote,
   Ticket,
   Users2,
   CalendarCheck,
@@ -77,6 +78,12 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/documents",
           roles: ["employee"],
         },
+        {
+          label: "My Questions",
+          icon: MessageSquareQuote,
+          href: "/app/questions",
+          roles: ["employee"],
+        },
       ],
     },
   ],
@@ -106,6 +113,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           label: "Leave Approvals",
           icon: CalendarCheck,
           href: "/app/leave-approvals",
+          roles: ["hr"],
+        },
+        {
+          // Sits with Leave Approvals because it is the same kind of thing:
+          // work waiting on a person, not a page you browse.
+          label: "Questions for HR",
+          icon: MessageSquareQuote,
+          href: "/app/questions",
           roles: ["hr"],
         },
         {

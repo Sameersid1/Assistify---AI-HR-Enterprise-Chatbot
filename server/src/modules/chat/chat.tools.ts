@@ -7,6 +7,7 @@ import { UserModel } from '../users/user.model';
 import * as leaveService from '../leave/leave.service';
 import * as userService from '../users/user.service';
 import * as documentService from '../documents/document.service';
+import * as questionService from '../questions/question.service';
 import { applyLeaveSchema, listLeaveQuerySchema } from '../leave/leave.schema';
 import { toObjectId } from '../../shared/objectId';
 import type { AuthContext, Role } from '../../shared/types';
@@ -256,6 +257,56 @@ function selfServiceTools(auth: AuthContext): ChatTool[] {
       },
       run: (args) =>
         leaveService.cancelLeave(auth, toObjectId(String(args.requestId), 'LeaveRequest')),
+    },
+
+    {
+      declaration: {
+        name: 'send_question_to_hr',
+        description:
+          'Forward this person\'s question to HR when you cannot answer it — ' +
+          'nothing in the policy documents covers it, or it is about something ' +
+          'you have no tool for such as payroll, benefits or their contract. ' +
+          'ONLY call this after they have agreed to it. Say you cannot answer, ' +
+          'offer to pass it to HR, and wait for a yes. Never send a question ' +
+          'you could have answered yourself, and never send one without asking. ' +
+          'HR replies in the portal and the person is notified.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            question: {
+              type: 'string',
+              description:
+                "The question in the person's own words, self-contained enough " +
+                'for HR to read without the rest of the conversation',
+            },
+            assistantNote: {
+              type: 'string',
+              description:
+                'One line on why you could not answer, so HR addresses the gap ' +
+                'rather than repeating what you already told them',
+            },
+          },
+          required: ['question'],
+        },
+      },
+      run: async (args) => {
+        const result = await questionService.askQuestion(auth, {
+          question: String(args.question ?? ''),
+          ...(args.assistantNote ? { assistantNote: String(args.assistantNote) } : {}),
+        });
+        return { sent: true, question: result };
+      },
+    },
+
+    {
+      declaration: {
+        name: 'list_my_questions',
+        description:
+          "List questions this person has already sent to HR, and HR's replies. " +
+          'Call this when they ask whether HR has responded, what they asked ' +
+          'before, or to check on something they raised earlier.',
+      },
+      run: () => questionService.listMyQuestions(auth),
     },
   ];
 }

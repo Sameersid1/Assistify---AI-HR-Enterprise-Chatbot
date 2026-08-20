@@ -216,3 +216,19 @@ export interface ChatResponse {
 export type ApiEnvelope<T> =
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string } }
+
+/* ── Questions for HR ────────────────────────────────────────────────────── */
+
+export interface CompanyQuestion {
+  id: string
+  question: string
+  /** Why the assistant could not answer, so HR closes the gap. */
+  assistantNote: string | null
+  status: 'OPEN' | 'ANSWERED'
+  answer: string | null
+  answeredAt: string | null
+  createdAt: string
+  /** Present only on the approver queue, where the question is someone else's. */
+  askedBy?: { id: string; fullName: string; email: string; department: string | null }
+  answeredBy?: { fullName: string } | null
+}

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/context/AuthContext"
 import { api } from "@/lib/api"
-import { LEAVE_TYPE_LABELS, type LeaveRequest } from "@/lib/types"
+import { LEAVE_TYPE_LABELS, type CompanyQuestion, type LeaveRequest } from "@/lib/types"
 
 /**
  * Notifications, from the database.
@@ -86,6 +86,23 @@ export const Notifications: React.FC = () => {
         }
       }
 
+      if (APPROVER_ROLES.has(user.role)) {
+        try {
+          const res = await api.get<{ questions: CompanyQuestion[] }>("/questions?status=OPEN")
+          for (const q of res.questions) {
+            next.push({
+              id: `q-${q.id}`,
+              title: "Question waiting for an answer",
+              detail: `${q.askedBy?.fullName ?? "Someone"} asked: ${q.question}`,
+              when: relative(q.createdAt),
+              href: "/app/questions",
+            })
+          }
+        } catch {
+          /* same */
+        }
+      }
+
       try {
         const res = await api.get<{ requests: LeaveRequest[] }>("/leave/my-requests")
         const cutoff = Date.now() - RECENT_DAYS * 86_400_000
@@ -97,6 +114,25 @@ export const Notifications: React.FC = () => {
             detail: `${r.days} day${r.days === 1 ? "" : "s"} ${LEAVE_TYPE_LABELS[r.type]} from ${formatDate(r.fromDate)}${r.decisionNote ? ` — "${r.decisionNote}"` : ""}`,
             when: relative(r.decidedAt),
             href: "/app",
+          })
+        }
+      } catch {
+        /* same */
+      }
+
+      // The other half of the loop: HR answered something you asked.
+      try {
+        const res = await api.get<{ questions: CompanyQuestion[] }>("/questions/mine")
+        const cutoff = Date.now() - RECENT_DAYS * 86_400_000
+        for (const q of res.questions) {
+          if (q.status !== "ANSWERED" || !q.answeredAt) continue
+          if (new Date(q.answeredAt).getTime() < cutoff) continue
+          next.push({
+            id: `qa-${q.id}`,
+            title: "HR answered your question",
+            detail: q.answer ?? q.question,
+            when: relative(q.answeredAt),
+            href: "/app/questions",
           })
         }
       } catch {

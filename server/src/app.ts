@@ -9,6 +9,7 @@ import userRoutes from './modules/users/user.routes';
 import leaveRoutes from './modules/leave/leave.routes';
 import chatRoutes from './modules/chat/chat.routes';
 import documentRoutes from './modules/documents/document.routes';
+import questionRoutes from './modules/questions/question.routes';
 
 export function createApp() {
   const app = express();
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/v1/leave', leaveRoutes);
   app.use('/api/v1/chat', chatRoutes);
   app.use('/api/v1/documents', documentRoutes);
+  app.use('/api/v1/questions', questionRoutes);
 
   // 404 + error handler must be last
   app.use(notFoundHandler);

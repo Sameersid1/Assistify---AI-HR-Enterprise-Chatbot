@@ -12,6 +12,7 @@ import { ChatPage } from "@/pages/ChatPage"
 import { EmployeesPage } from "@/pages/EmployeesPage"
 import { LeaveApprovalsPage } from "@/pages/LeaveApprovalsPage"
 import { DocumentsPage } from "@/pages/DocumentsPage"
+import { QuestionsPage } from "@/pages/QuestionsPage"
 import { UsersPage } from "@/pages/UsersPage"
 
 /** Role sets — these mirror the server's requireRole guards. */
@@ -49,6 +50,9 @@ export function App() {
               <Route index element={<DashboardPage />} />
               <Route path="chat" element={<ChatPage />} />
               <Route path="documents" element={<DocumentsPage />} />
+              {/* Both sides live here: approvers get the queue, everyone else
+                  gets their own questions. The server decides which. */}
+              <Route path="questions" element={<QuestionsPage />} />
               <Route path="apply-leave" element={<ApplyLeavePage />} />
 
               {/* HR */}
