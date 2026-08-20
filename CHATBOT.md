@@ -29,10 +29,11 @@ free tier — no card, no trial that expires.
 6. [Step 4 — the route](#6-step-4--the-route)
 7. [Step 5 — the chat page](#7-step-5--the-chat-page)
 8. [Step 6 — streaming the answer as it is written](#8-step-6--streaming-the-answer-as-it-is-written)
-9. [What's still missing](#9-whats-still-missing)
-10. [How to run it](#10-how-to-run-it)
-11. [Two problems we hit and how we fixed them](#11-two-problems-we-hit-and-how-we-fixed-them)
-12. [Questions you will get asked](#12-questions-you-will-get-asked)
+9. [Step 7 — two AI providers, so the demo cannot run out](#9-step-7--two-ai-providers-so-the-demo-cannot-run-out)
+10. [What's still missing](#10-whats-still-missing)
+11. [How to run it](#11-how-to-run-it)
+12. [Two problems we hit and how we fixed them](#12-two-problems-we-hit-and-how-we-fixed-them)
+13. [Questions you will get asked](#13-questions-you-will-get-asked)
 
 ---
 
@@ -456,7 +457,123 @@ written so far stay on screen and you can carry on asking.
 
 ---
 
-## 9. What's still missing
+## 9. Step 7 — two AI providers, so the demo cannot run out
+
+### The problem, in one number
+
+Google's free Gemini tier allows roughly **20 chat requests per day**. That is
+enough to build against and nowhere near enough to hand to an examiner. We hit
+it twice in a single afternoon of testing, and when it runs out the assistant
+stops answering entirely.
+
+### The fix
+
+The chatbot now talks to **two** providers:
+
+| | Provider | Free tier | Card needed |
+|---|---|---|---|
+| **Primary** | **Groq** (`llama-3.3-70b-versatile`) | ~14,400 requests/day | No |
+| **Fallback** | Gemini (`gemini-2.5-flash`) | ~20 requests/day | No |
+
+If Groq is rate-limited or has an outage, the request automatically retries on
+Gemini. Nobody sees anything except an answer.
+
+Gemini is kept even though its quota is tiny, because **document search needs it
+anyway** — the embedding model that powers Company Policies is Google's, and
+that quota is separate and much larger. So the second provider costs us nothing.
+
+### How it is built
+
+The important design decision: **the tool loop was not duplicated.**
+
+```
+chat.service.ts   ← the one and only tool loop
+      │
+      ▼
+llm.ts            ← picks a provider, falls back if one fails
+      │
+      ├── llm.groq.ts     ← speaks OpenAI's format
+      └── llm.gemini.ts   ← speaks Google's format
+```
+
+Everything shared sits in `llm.types.ts` as a neutral shape. Each adapter
+translates that shape into its own provider's wire format.
+
+**Why this matters for security.** The tool loop is where role-scoped tools are
+enforced — an employee's assistant is never even *told* the company-wide tools
+exist. If we had written a second loop for the second provider, a future fix to
+that gating could land on one path and not the other. There is one loop, so
+there is one place to get right. `chat.tools.ts` — the security-critical file —
+did not change at all when we added Groq. It does not know which provider is
+running.
+
+### The one rule that is easy to get wrong
+
+**Failover only applies until the first word reaches the browser.**
+
+Once text is on screen, the answer has already been partly read. Starting again
+on another provider would splice two different answers together mid-sentence.
+So after the first token, a failure is reported honestly instead:
+
+```ts
+const nextExists = index < available.length - 1;
+if (produced || !llmErr.retryable || !nextExists) throw llmErr;
+```
+
+`produced` is the guard. It is tested — see below.
+
+Also, not every failure is worth retrying. A `429` (rate limit) or `5xx`
+(provider is down) means *try the other one*. A `400` (our request was
+malformed) or `401` (bad key) fails identically everywhere, so retrying just
+spends another round trip to reach the same error.
+
+### How we tested it without burning quota
+
+`npm run test:llm` runs 12 checks against fabricated wire traffic — no API
+calls, no keys, no quota:
+
+```
+PASS  text deltas arrive in order
+PASS  fragmented arguments reassemble
+PASS  interleaved parallel calls stay separate
+PASS  no-argument tool yields empty args
+PASS  malformed arguments degrade to empty
+PASS  429 is retryable
+PASS  400 is not retryable
+PASS  429 on primary falls over to secondary
+PASS  no failover once text is on screen
+PASS  400 does not trigger failover
+PASS  unconfigured provider is skipped
+PASS  all providers exhausted reports the last error
+```
+
+The tricky ones are 2 and 3. Groq streams tool arguments as **partial JSON split
+across many frames**, keyed by an index — so `{"status":"PENDING"}` might arrive
+as `{"sta` … `tus":"PEN` … `DING"` … `}`. And when the model calls two tools at
+once, those fragments are interleaved. The adapter buffers by index and only
+emits a call once the stream ends. That is impossible to check by eye, which is
+exactly why it is tested.
+
+### Setting it up
+
+Add to `server/.env` (and to Render's environment variables):
+
+```
+GROQ_API_KEY=gsk_...
+GEMINI_API_KEY=AIza...
+```
+
+Get the Groq key at <https://console.groq.com/keys> — sign in with Google, click
+*Create API Key*. No credit card.
+
+Either key alone is enough for chat to work. With only Gemini, Groq is skipped
+as unconfigured and you are back to 20 requests a day. With both, you have
+headroom plus a spare.
+
+
+---
+
+## 10. What's still missing
 
 Be upfront about this — it is the honest answer and it is a short list.
 
@@ -470,7 +587,7 @@ Be upfront about this — it is the honest answer and it is a short list.
 
 ---
 
-## 10. How to run it
+## 11. How to run it
 
 **1. Get a free API key** from
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Sign in with a
@@ -515,7 +632,7 @@ assistant answered. The employee case should be a chat bubble.
 
 ---
 
-## 11. Two problems we hit and how we fixed them
+## 12. Two problems we hit and how we fixed them
 
 Worth knowing, because they are the kind of thing an examiner may ask about.
 
@@ -552,7 +669,7 @@ permission system. That is why the tool list is built per user.
 
 ---
 
-## 12. Questions you will get asked
+## 13. Questions you will get asked
 
 **"Is the AI connected to your database?"**
 > Not directly. It can request specific functions we wrote, and our server runs

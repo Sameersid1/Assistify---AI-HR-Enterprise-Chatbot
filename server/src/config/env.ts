@@ -56,6 +56,10 @@ const envSchema = z.object({
   // Optional so a fresh clone still boots: without it every other feature works
   // and only POST /chat refuses, with a message saying why. Unlike the database
   // and JWT secrets, an unset key here is a missing feature, not a broken server.
+  // Primary chat provider: its free tier allows thousands of requests a day
+  // against Gemini's twenty. Optional so a checkout with only a Gemini key
+  // still runs — llm.ts falls back to whichever is configured.
+  GROQ_API_KEY: z.string().trim().optional(),
   GEMINI_API_KEY: z.string().trim().optional(),
 });
 

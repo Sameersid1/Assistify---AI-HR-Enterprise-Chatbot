@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../shared/apiResponse';
 import { getAuth } from '../../shared/types';
-import { AppError } from '../../shared/errors';
 import { chatSchema } from './chat.schema';
 import * as chatService from './chat.service';
 
@@ -55,10 +54,16 @@ export async function chatStreamController(req: Request, res: Response): Promise
   try {
     await chatService.chatStream(auth, input, send, controller.signal);
   } catch (err) {
-    const code = err instanceof AppError ? err.code : 'AI_REQUEST_FAILED';
-    const message =
-      err instanceof AppError ? err.message : 'The assistant could not be reached.';
-    send({ type: 'error', code, message });
+    // Anything that escapes chatStream — a failure before the first provider
+    // was even reached. Normalised through the same mapper the loop uses so the
+    // client sees one error shape whatever went wrong.
+    const appErr = chatService.describeAiError(err);
+    send({
+      type: 'error',
+      code: appErr.code,
+      message: appErr.message,
+      status: appErr.statusCode,
+    });
   } finally {
     if (!res.writableEnded) res.end();
   }

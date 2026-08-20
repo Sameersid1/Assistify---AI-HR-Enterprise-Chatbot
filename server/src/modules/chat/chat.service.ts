@@ -1,26 +1,24 @@
-// Type-only: @google/genai is ESM and this server compiles to CommonJS, so a
-// static import would fail at build. Types are erased; the class itself is
-// pulled in with a dynamic import() inside getClient(), which CommonJS can do.
-import type { Content, GoogleGenAI, Part } from '@google/genai' with { 'resolution-mode': 'import' };
-import { env } from '../../config/env';
 import { AppError } from '../../shared/errors';
 import { UserModel } from '../users/user.model';
 import { CompanyModel } from '../companies/company.model';
 import { buildTools, isApprover, type ChatTool } from './chat.tools';
+import { streamWithFallback, LlmError, type LlmMessage } from './llm';
 import type { AuthContext } from '../../shared/types';
 import type { ChatInput } from './chat.schema';
 
 /**
  * The assistant.
  *
- * Gemini is given a list of functions it may request; it never touches the
+ * The model is given a list of functions it may request; it never touches the
  * database. It asks for one, we run it as the caller, we hand back the result,
  * and it writes the answer from that. The part that matters for safety is in
  * chat.tools.ts — every tool runs as the person chatting.
+ *
+ * Which company's model answers is decided in llm.ts and is not this file's
+ * business. What matters here is that the tool list comes from buildTools(auth)
+ * once and is handed to whichever provider serves the request, so failover can
+ * never widen what the caller can reach.
  */
-
-/** The free-tier workhorse. Swap for gemini-2.5-pro if answers need more depth. */
-const MODEL = 'gemini-2.5-flash';
 
 /**
  * How many times we will run tools and ask again within one message.
@@ -32,30 +30,12 @@ const MODEL = 'gemini-2.5-flash';
  */
 const MAX_TOOL_ROUNDS = 4;
 
-/** Built once — the client pools connections, so per-request construction reconnects each time. */
-let client: GoogleGenAI | null = null;
-
-async function getClient(): Promise<GoogleGenAI> {
-  if (!env.GEMINI_API_KEY) {
-    // 503 rather than 500: the server is fine, this one feature is unconfigured.
-    // Said plainly so a teammate with no key knows why chat alone is failing.
-    throw new AppError(
-      503,
-      'AI_NOT_CONFIGURED',
-      'The assistant is not configured on this server (GEMINI_API_KEY is not set).',
-    );
-  }
-  if (!client) {
-    const genai = await import('@google/genai');
-    client = new genai.GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
-  }
-  return client;
-}
-
 export interface ChatResult {
   reply: string;
   /** Names of tools actually called, in order — surfaced so the UI can show its work. */
   toolsUsed: string[];
+  /** Which provider answered. Useful when one has quietly taken over for the other. */
+  provider?: string;
 }
 
 /**
@@ -158,25 +138,12 @@ say so if asked.`;
 }
 
 /**
- * Turn a failure from the Gemini API into something the person can act on.
- *
- * Without this every upstream problem — rate limit, rejected key, Google having
- * a bad afternoon — arrives as an unhandled throw and the UI shows "Something
- * went wrong", which is indistinguishable from a bug in our own code. The
- * status is the useful part: it separates "wait a minute" from "the key is
- * wrong" from "not your fault at all", and those need different reactions.
- *
- * The upstream text is passed through deliberately. Google's messages name the
- * problem ("API key not valid", "quota exceeded") and contain no secret; hiding
- * them is what made the SMTP failure take a day to diagnose.
- */
-/**
  * Dig the readable sentence out of an upstream error.
  *
- * Google returns its errors as JSON, and the useful sentence is nested inside
- * — sometimes JSON-encoded a second time within the outer message. Passed
- * through raw it puts about fifteen hundred characters of escaped braces in
- * the chat window, which buries the one line that actually says what to do.
+ * Providers return their errors as JSON, and the useful sentence is nested
+ * inside — sometimes JSON-encoded a second time within the outer message.
+ * Passed through raw it puts about fifteen hundred characters of escaped braces
+ * in the chat window, which buries the one line that actually says what to do.
  * This walks down to `error.message` as many times as it stays JSON, and falls
  * back to the original text if it is not JSON at all.
  */
@@ -196,42 +163,52 @@ function humanizeUpstream(detail: string): string {
     }
   }
 
-  // Google appends its quota breakdown after the advice; the first line is the
+  // Providers append a quota breakdown after the advice; the first line is the
   // part a person can act on.
   const firstLine = current.split('\n')[0].trim();
   const useful = firstLine || current;
   return useful.length > 300 ? `${useful.slice(0, 297)}…` : useful;
 }
 
-function describeAiError(err: unknown): AppError {
-  // Duck-typed rather than instanceof: the SDK's ApiError class lives in an ESM
-  // module this CommonJS file only imports types from.
-  const status = typeof (err as { status?: unknown })?.status === 'number'
-    ? (err as { status: number }).status
-    : undefined;
+/**
+ * Turn a provider failure into something the person can act on.
+ *
+ * Without this every upstream problem — rate limit, rejected key, a provider
+ * having a bad afternoon — arrives as an unhandled throw and the UI shows
+ * "Something went wrong", which is indistinguishable from a bug in our own
+ * code. The status is the useful part: it separates "wait a minute" from "the
+ * key is wrong" from "not your fault at all", and those need different
+ * reactions.
+ *
+ * By the time this is reached, failover has already been tried and failed —
+ * so a rate limit here means every configured provider is exhausted, not just
+ * one, and the message says so.
+ */
+export function describeAiError(err: unknown): AppError {
+  if (err instanceof AppError) return err;
+
+  const status = err instanceof LlmError ? err.status : undefined;
+  const provider = err instanceof LlmError ? err.provider : 'the assistant';
   const raw = err instanceof Error ? err.message : String(err);
   // The full payload still goes to the server log below; only what reaches the
   // chat window is trimmed.
   const detail = humanizeUpstream(raw);
 
   // eslint-disable-next-line no-console
-  console.error(`🤖 Gemini request failed (status ${status ?? 'unknown'}): ${raw}`);
+  console.error(`🤖 ${provider} request failed (status ${status ?? 'unknown'}): ${raw}`);
 
   if (status === 429) {
-    // Per-minute and per-day quotas both return 429, and the difference matters
-    // enormously — one clears in under a minute, the other not until the quota
-    // resets. Only Google's text distinguishes them, so it goes to the user.
     return new AppError(
       429,
       'AI_RATE_LIMITED',
-      `The assistant has hit its free-tier limit. If this is the per-minute limit it clears in about a minute. (${detail})`,
+      `Every configured AI provider is rate-limited right now. This usually clears within a minute. (${detail})`,
     );
   }
   if (status === 401 || status === 403) {
     return new AppError(
       503,
       'AI_KEY_REJECTED',
-      `The assistant's API key was rejected by Google. Check GEMINI_API_KEY. (${detail})`,
+      `The assistant's API key for ${provider} was rejected. Check GROQ_API_KEY / GEMINI_API_KEY. (${detail})`,
     );
   }
   if (status === 400) {
@@ -241,7 +218,7 @@ function describeAiError(err: unknown): AppError {
     return new AppError(
       503,
       'AI_UNAVAILABLE',
-      'Google’s AI service is temporarily unavailable. Try again shortly.',
+      'The AI service is temporarily unavailable. Try again shortly.',
     );
   }
   return new AppError(502, 'AI_REQUEST_FAILED', `The assistant could not be reached. (${detail})`);
@@ -254,130 +231,16 @@ function describeAiError(err: unknown): AppError {
  * wrong and can say so or try a different approach, which is far better than
  * the person seeing a blank error where an answer should be.
  */
-async function runTool(tool: ChatTool, args: Record<string, unknown>): Promise<Part> {
-  const name = tool.declaration.name as string;
+async function runTool(tool: ChatTool, args: Record<string, unknown>): Promise<string> {
+  const name = tool.declaration.name;
   try {
-    return { functionResponse: { name, response: { output: await tool.run(args) } } };
+    return JSON.stringify({ output: await tool.run(args) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
     console.error(`🤖 Tool ${name} failed: ${message}`);
-    return { functionResponse: { name, response: { error: message } } };
+    return JSON.stringify({ error: message });
   }
-}
-
-interface Prepared {
-  ai: GoogleGenAI;
-  tools: ChatTool[];
-  byName: Map<string, ChatTool>;
-  systemInstruction: string;
-  contents: Content[];
-}
-
-/**
- * Everything both the buffered and the streaming path need, built once.
- *
- * Kept together so the two entry points cannot drift apart — the tool list and
- * the system prompt are the security-relevant half of this feature, and a
- * streaming path that quietly built a different tool list would be a hole.
- */
-async function prepare(auth: AuthContext, input: ChatInput): Promise<Prepared> {
-  const ai = await getClient();
-  const tools = buildTools(auth);
-  return {
-    ai,
-    tools,
-    byName: new Map(tools.map((t) => [t.declaration.name as string, t])),
-    systemInstruction: buildSystemPrompt(await describeCaller(auth), isApprover(auth.role)),
-    // Gemini names the assistant's side of a transcript "model", not "assistant".
-    contents: input.messages.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    })),
-  };
-}
-
-/**
- * Run every tool the model asked for and append both halves to the transcript.
- *
- * The model's own request has to be echoed back before the answers; dropping
- * that turn breaks the pairing between call and response and Gemini rejects
- * the next request.
- */
-async function resolveCalls(
-  calls: { name?: string; args?: Record<string, unknown> }[],
-  byName: Map<string, ChatTool>,
-  contents: Content[],
-  toolsUsed: string[],
-  onTool?: (name: string) => void,
-): Promise<void> {
-  contents.push({
-    role: 'model',
-    parts: calls.map((functionCall) => ({ functionCall })),
-  });
-
-  const results = await Promise.all(
-    calls.map(async (call): Promise<Part> => {
-      const tool = byName.get(call.name ?? '');
-      if (!tool) {
-        // Only reachable if the model invents a name. Told, not thrown, so it
-        // can correct itself rather than the message dying.
-        return {
-          functionResponse: {
-            name: call.name ?? 'unknown',
-            response: { error: `No such tool: ${call.name}` },
-          },
-        };
-      }
-      const name = tool.declaration.name as string;
-      toolsUsed.push(name);
-      onTool?.(name);
-      return runTool(tool, call.args ?? {});
-    }),
-  );
-
-  contents.push({ role: 'user', parts: results });
-}
-
-export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatResult> {
-  const { ai, tools, byName, systemInstruction, contents } = await prepare(auth, input);
-  const toolsUsed: string[] = [];
-
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
-    try {
-      response = await ai.models.generateContent({
-        model: MODEL,
-        contents,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
-        },
-      });
-    } catch (err) {
-      throw describeAiError(err);
-    }
-
-    const calls = response.functionCalls ?? [];
-
-    // No tool requested — this is the answer.
-    if (calls.length === 0) {
-      const reply = response.text?.trim();
-      return {
-        reply: reply || "Sorry — I couldn't put together an answer for that. Try rephrasing?",
-        toolsUsed,
-      };
-    }
-
-    await resolveCalls(calls, byName, contents, toolsUsed);
-  }
-
-  // Still asking for tools after MAX_TOOL_ROUNDS — stop rather than loop.
-  return {
-    reply:
-      "Sorry — I couldn't finish looking that up. Try asking about one thing at a time.",
-    toolsUsed,
-  };
 }
 
 /* ── streaming ──────────────────────────────────────────────────────────── */
@@ -388,23 +251,24 @@ export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatRes
  * `discard` exists because a round that ends in a tool call may have emitted
  * some prose first ("Let me check that for you…"). That text is scaffolding for
  * the tool call, not part of the answer, so the client throws away what it has
- * shown so far and starts the bubble again from the real reply. Gemini rarely
- * does this, but a client that cannot handle it shows the user two answers
- * glued together.
+ * shown so far and starts the bubble again from the real reply. A client that
+ * cannot handle it shows the user two answers glued together.
  */
 export type ChatStreamEvent =
   | { type: 'tool'; name: string }
   | { type: 'delta'; text: string }
   | { type: 'discard' }
-  | { type: 'done'; toolsUsed: string[] }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'done'; toolsUsed: string[]; provider?: string }
+  // `status` is for the buffered endpoint, which has to turn this back into a
+  // real HTTP code. The browser ignores it and reads `message`.
+  | { type: 'error'; code: string; message: string; status: number };
 
 /**
- * The same conversation as chat(), delivered as it is written.
+ * The conversation, delivered as it is written.
  *
- * Identical tools, identical system prompt, identical tenancy — this shares
- * prepare() and resolveCalls() with the buffered path precisely so that
- * "streaming" cannot become a second, less careful implementation.
+ * This is the only tool loop in the system. The buffered endpoint below drains
+ * this same function rather than repeating it, because a second copy is exactly
+ * how a role-gating fix ends up applied to one path and not the other.
  */
 export async function chatStream(
   auth: AuthContext,
@@ -412,71 +276,141 @@ export async function chatStream(
   emit: (event: ChatStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const { ai, tools, byName, systemInstruction, contents } = await prepare(auth, input);
+  const tools = buildTools(auth);
+  const byName = new Map(tools.map((t) => [t.declaration.name, t]));
+  const system = buildSystemPrompt(await describeCaller(auth), isApprover(auth.role));
+
+  const messages: LlmMessage[] = input.messages.map((m) =>
+    m.role === 'assistant'
+      ? { role: 'assistant' as const, content: m.content }
+      : { role: 'user' as const, content: m.content },
+  );
+
   const toolsUsed: string[] = [];
+  let provider: string | undefined;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const calls: { name?: string; args?: Record<string, unknown> }[] = [];
+    const calls: { id: string; name: string; args: Record<string, unknown> }[] = [];
+    let text = '';
     let emittedText = false;
-    let sawAnyText = false;
 
     try {
-      const stream = await ai.models.generateContentStream({
-        model: MODEL,
-        contents,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: tools.map((t) => t.declaration) }],
-          ...(signal ? { abortSignal: signal } : {}),
-        },
-      });
-
-      for await (const chunk of stream) {
+      for await (const chunk of streamWithFallback({
+        system,
+        messages,
+        tools: tools.map((t) => t.declaration),
+        signal,
+      })) {
         if (signal?.aborted) return;
+        provider = chunk.provider;
 
-        for (const call of chunk.functionCalls ?? []) calls.push(call);
+        if (chunk.toolCalls?.length) calls.push(...chunk.toolCalls);
 
-        const text = chunk.text;
-        if (text) {
-          sawAnyText = true;
+        if (chunk.text) {
+          text += chunk.text;
           // Held back once a tool call has appeared in this round — that text
           // is about to be discarded anyway, so showing it would only flicker.
           if (calls.length === 0) {
             emittedText = true;
-            emit({ type: 'delta', text });
+            emit({ type: 'delta', text: chunk.text });
           }
         }
       }
     } catch (err) {
       if (signal?.aborted) return;
       const appErr = describeAiError(err);
-      emit({ type: 'error', code: appErr.code, message: appErr.message });
+      emit({ type: 'error', code: appErr.code, message: appErr.message, status: appErr.statusCode });
       return;
     }
 
     if (calls.length === 0) {
-      if (!sawAnyText) {
+      if (!text.trim()) {
         emit({
           type: 'delta',
           text: "Sorry — I couldn't put together an answer for that. Try rephrasing?",
         });
       }
-      emit({ type: 'done', toolsUsed });
+      emit({ type: 'done', toolsUsed, provider });
       return;
     }
 
     if (emittedText) emit({ type: 'discard' });
 
-    // Announced through resolveCalls so the chips only ever name tools that
-    // really exist — a hallucinated tool name is handled, not advertised.
-    await resolveCalls(calls, byName, contents, toolsUsed, (name) =>
-      emit({ type: 'tool', name }),
+    // The model's own request has to be echoed back before the answers, or the
+    // next request has results paired with nothing.
+    messages.push({ role: 'assistant', content: text, toolCalls: calls });
+
+    const results = await Promise.all(
+      calls.map(async (call): Promise<LlmMessage> => {
+        const tool = byName.get(call.name);
+        if (!tool) {
+          // Only reachable if the model invents a name. Told, not thrown, so it
+          // can correct itself rather than the message dying.
+          return {
+            role: 'tool',
+            toolCallId: call.id,
+            name: call.name,
+            content: JSON.stringify({ error: `No such tool: ${call.name}` }),
+          };
+        }
+        toolsUsed.push(call.name);
+        // Announced only for tools that really exist — a hallucinated name is
+        // handled, not advertised as work the assistant did.
+        emit({ type: 'tool', name: call.name });
+        return {
+          role: 'tool',
+          toolCallId: call.id,
+          name: call.name,
+          content: await runTool(tool, call.args),
+        };
+      }),
     );
+
+    messages.push(...results);
   }
 
   emit({
     type: 'delta',
     text: "Sorry — I couldn't finish looking that up. Try asking about one thing at a time.",
   });
-  emit({ type: 'done', toolsUsed });
+  emit({ type: 'done', toolsUsed, provider });
+}
+
+/**
+ * The whole answer in one piece, for callers that cannot stream.
+ *
+ * Implemented by draining chatStream so there is exactly one loop to reason
+ * about, one place where tools are gated, and no chance of the two paths
+ * disagreeing about what a role may reach.
+ */
+export async function chat(auth: AuthContext, input: ChatInput): Promise<ChatResult> {
+  let reply = '';
+  let toolsUsed: string[] = [];
+  let provider: string | undefined;
+  let failure: AppError | null = null;
+
+  await chatStream(auth, input, (event) => {
+    switch (event.type) {
+      case 'delta':
+        reply += event.text;
+        break;
+      case 'discard':
+        reply = '';
+        break;
+      case 'done':
+        toolsUsed = event.toolsUsed;
+        provider = event.provider;
+        break;
+      case 'error':
+        // Rethrown below so this endpoint keeps returning a real HTTP status
+        // rather than a 200 containing an apology.
+        failure = new AppError(event.status, event.code, event.message);
+        break;
+      case 'tool':
+        break;
+    }
+  });
+
+  if (failure) throw failure;
+  return { reply, toolsUsed, provider };
 }

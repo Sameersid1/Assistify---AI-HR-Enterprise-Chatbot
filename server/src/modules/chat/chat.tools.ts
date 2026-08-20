@@ -1,7 +1,7 @@
 // Type-only import: @google/genai ships as ESM, and this server compiles to
 // CommonJS. Types are erased at build time so nothing here tries to `require`
 // it — the one place that needs the class at runtime uses a dynamic import.
-import type { FunctionDeclaration } from '@google/genai' with { 'resolution-mode': 'import' };
+import type { ToolDeclaration } from './llm.types';
 import { CompanyModel } from '../companies/company.model';
 import * as leaveService from '../leave/leave.service';
 import * as userService from '../users/user.service';
@@ -52,9 +52,9 @@ export function isApprover(role: Role): boolean {
   return APPROVER_ROLES.includes(role);
 }
 
-/** A declaration Gemini sees, paired with the function we actually run. */
+/** A declaration the model sees, paired with the function we actually run. */
 export interface ChatTool {
-  declaration: FunctionDeclaration;
+  declaration: ToolDeclaration;
   run: (args: Record<string, unknown>) => Promise<unknown>;
 }
 

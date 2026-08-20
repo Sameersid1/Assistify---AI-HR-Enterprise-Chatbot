@@ -17,7 +17,8 @@
     "test:permissions": "tsx src/scripts/permission-matrix.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "echo \"no tests yet\" && exit 0",
+    "test:llm": "tsx scripts/verify-llm.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",
