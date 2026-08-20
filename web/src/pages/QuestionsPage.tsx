@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
+import { useLiveRefresh } from "@/lib/useLiveRefresh"
 import type { CompanyQuestion } from "@/lib/types"
 
 /**
@@ -63,6 +64,9 @@ export const QuestionsPage: React.FC = () => {
   useEffect(() => {
     void load()
   }, [load])
+
+  // An answer written in another window shows up on returning to this tab.
+  useLiveRefresh(load)
 
   const answer = async (id: string) => {
     const text = (drafts[id] ?? "").trim()

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Bell, Inbox } from "lucide-react"
 import {
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/context/AuthContext"
 import { api } from "@/lib/api"
+import { useLiveRefresh } from "@/lib/useLiveRefresh"
 import { LEAVE_TYPE_LABELS, type CompanyQuestion, type LeaveRequest } from "@/lib/types"
 
 /**
@@ -60,11 +61,9 @@ export const Notifications: React.FC = () => {
   const { user } = useAuth()
   const [items, setItems] = useState<Item[]>([])
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) return
-    let cancelled = false
-
-    const load = async () => {
+    {
       const next: Item[] = []
 
       if (APPROVER_ROLES.has(user.role)) {
@@ -139,14 +138,17 @@ export const Notifications: React.FC = () => {
         /* same */
       }
 
-      if (!cancelled) setItems(next.slice(0, 8))
-    }
-
-    void load()
-    return () => {
-      cancelled = true
+      setItems(next.slice(0, 8))
     }
   }, [user])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  // Re-read on returning to the tab, so an answer written in another window is
+  // already here rather than waiting for a reload.
+  useLiveRefresh(load)
 
   return (
     <DropdownMenu>
