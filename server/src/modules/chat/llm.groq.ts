@@ -17,9 +17,18 @@ const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 /**
  * Chosen for tool use, not for benchmark scores. This assistant's job is to
  * pick the right function and pass it clean arguments; a bigger model writes
- * prettier prose but does not read a leave balance any more correctly.
+ * prettier prose but does not read a leave balance any more correctly. Qwen
+ * also supports *parallel* tool calls, which is what the loop in
+ * chat.service.ts already assumes when it runs a round's calls concurrently.
+ *
+ * Overridable by env because hosted model names get retired without notice —
+ * llama-3.3-70b-versatile was the first choice here and vanished from the
+ * catalogue before this shipped. When that happens again, the fix is one
+ * environment variable, not a redeploy of changed code. List what your key can
+ * actually reach with:
+ *   curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
  */
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL = env.GROQ_MODEL || 'qwen/qwen3.6-27b';
 
 interface GroqDelta {
   content?: string | null;

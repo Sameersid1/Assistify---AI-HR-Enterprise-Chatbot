@@ -60,6 +60,9 @@ const envSchema = z.object({
   // against Gemini's twenty. Optional so a checkout with only a Gemini key
   // still runs — llm.ts falls back to whichever is configured.
   GROQ_API_KEY: z.string().trim().optional(),
+  // Optional override. Hosted model names get retired without notice, so this
+  // is the escape hatch that does not need a code change — see llm.groq.ts.
+  GROQ_MODEL: z.string().trim().optional(),
   GEMINI_API_KEY: z.string().trim().optional(),
 });
 
