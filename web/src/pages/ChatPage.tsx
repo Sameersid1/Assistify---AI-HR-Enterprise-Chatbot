@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
+import { renderMarkdown } from "@/lib/markdown"
 import type { ChatMessage, ChatRequest } from "@/lib/types"
 
 interface DisplayMessage extends ChatMessage {
@@ -346,13 +347,16 @@ export const ChatPage: React.FC = () => {
               }`}
             >
               <div
-                className={`rounded-lg px-4 py-2.5 text-xs leading-relaxed whitespace-pre-wrap ${
+                className={`rounded-lg px-4 py-2.5 text-xs leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    ? "whitespace-pre-wrap bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                     : "border border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-800/80 dark:text-zinc-100"
                 }`}
               >
-                {msg.content}
+                {/* The assistant writes Markdown whether asked to or not, so its
+                    turns are parsed. A person's own message is shown exactly as
+                    they typed it — nobody expects their asterisks to vanish. */}
+                {msg.role === "assistant" ? renderMarkdown(msg.content) : msg.content}
                 {msg.streaming && (
                   <span className="ml-0.5 inline-block h-3 w-1.5 translate-y-px animate-pulse rounded-xs bg-indigo-500 align-middle" />
                 )}
