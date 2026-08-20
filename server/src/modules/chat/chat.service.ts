@@ -170,16 +170,52 @@ say so if asked.`;
  * problem ("API key not valid", "quota exceeded") and contain no secret; hiding
  * them is what made the SMTP failure take a day to diagnose.
  */
+/**
+ * Dig the readable sentence out of an upstream error.
+ *
+ * Google returns its errors as JSON, and the useful sentence is nested inside
+ * — sometimes JSON-encoded a second time within the outer message. Passed
+ * through raw it puts about fifteen hundred characters of escaped braces in
+ * the chat window, which buries the one line that actually says what to do.
+ * This walks down to `error.message` as many times as it stays JSON, and falls
+ * back to the original text if it is not JSON at all.
+ */
+function humanizeUpstream(detail: string): string {
+  let current = detail.trim();
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    const start = current.indexOf('{');
+    if (start === -1) break;
+    try {
+      const parsed: unknown = JSON.parse(current.slice(start));
+      const message = (parsed as { error?: { message?: unknown } })?.error?.message;
+      if (typeof message !== 'string' || !message.trim()) break;
+      current = message.trim();
+    } catch {
+      break;
+    }
+  }
+
+  // Google appends its quota breakdown after the advice; the first line is the
+  // part a person can act on.
+  const firstLine = current.split('\n')[0].trim();
+  const useful = firstLine || current;
+  return useful.length > 300 ? `${useful.slice(0, 297)}…` : useful;
+}
+
 function describeAiError(err: unknown): AppError {
   // Duck-typed rather than instanceof: the SDK's ApiError class lives in an ESM
   // module this CommonJS file only imports types from.
   const status = typeof (err as { status?: unknown })?.status === 'number'
     ? (err as { status: number }).status
     : undefined;
-  const detail = err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  // The full payload still goes to the server log below; only what reaches the
+  // chat window is trimmed.
+  const detail = humanizeUpstream(raw);
 
   // eslint-disable-next-line no-console
-  console.error(`🤖 Gemini request failed (status ${status ?? 'unknown'}): ${detail}`);
+  console.error(`🤖 Gemini request failed (status ${status ?? 'unknown'}): ${raw}`);
 
   if (status === 429) {
     // Per-minute and per-day quotas both return 429, and the difference matters

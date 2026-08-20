@@ -117,6 +117,11 @@ export const ChatPage: React.FC = () => {
     setMessages(user?.id ? loadTranscript(user.id) : [])
   }, [user?.id])
 
+  // Leaving the page mid-answer stops the request. Without this the stream
+  // keeps running against an unmounted component — writing into state nobody
+  // renders, and spending API quota on an answer that can never be read.
+  useEffect(() => () => abortRef.current?.abort(), [])
+
   // Persist after every completed turn. Skipped while a reply is streaming:
   // writing on each delta would hit localStorage once per token, and a
   // half-written answer is not worth restoring.
@@ -146,6 +151,9 @@ export const ChatPage: React.FC = () => {
   }, [messages, isThinking])
 
   const clearChat = () => {
+    // Stop an answer in flight first — otherwise its remaining text lands in a
+    // conversation the person just cleared.
+    abortRef.current?.abort()
     setMessages([])
     setErrorMessage(null)
     if (user?.id) localStorage.removeItem(storageKey(user.id))
