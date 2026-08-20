@@ -16,8 +16,25 @@ import type { UploadDocumentInput } from './document.schema';
  * is what lets it cite a source instead of recalling one.
  */
 
-/** Asymmetric embeddings: documents and queries are embedded for different roles. */
-const EMBEDDING_MODEL = 'text-embedding-004';
+/**
+ * Asymmetric embeddings: documents and queries are embedded for different roles.
+ *
+ * text-embedding-004 was retired by Google and now returns "not found", which
+ * broke document upload and search outright. gemini-embedding-2 replaces it and
+ * separates on-topic from off-topic questions more cleanly than
+ * gemini-embedding-001 did in the calibration below.
+ *
+ * Overridable by env for the same reason the chat model is: hosted model names
+ * get withdrawn without warning, and the fix should be a variable rather than a
+ * redeploy. List what a key can reach with:
+ *   curl "https://generativelanguage.googleapis.com/v1beta/models" \
+ *     -H "x-goog-api-key: $GEMINI_API_KEY"
+ *
+ * ⚠️ Changing this invalidates every stored vector. Embeddings from two models
+ * are not comparable, so existing documents must be deleted and re-uploaded —
+ * and MIN_SIMILARITY below has to be re-measured.
+ */
+const EMBEDDING_MODEL = env.EMBEDDING_MODEL || 'gemini-embedding-2';
 
 /**
  * Shorter vectors than the model's default.
@@ -46,8 +63,22 @@ const DEFAULT_TOP_K = 4;
  * says nothing about — without a floor the assistant would confidently cite the
  * nearest unrelated paragraph. Returning nothing is what lets it say it does
  * not know.
+ *
+ * MEASURED, not guessed. This was 0.5, which turned out to reject nothing at
+ * all: against a real leave policy, "what is the office wifi password?" still
+ * scored 0.52–0.60. Embedding similarities do not spread across the full 0–1
+ * range — unrelated business English sits well above zero — so a floor set by
+ * intuition sits below the noise instead of above it.
+ *
+ * Against the sample policy in docs/sample-data (6 chunks, 256 dimensions):
+ *
+ *   on-topic questions   best match 0.730 – 0.768
+ *   off-topic questions  best match 0.562 – 0.599
+ *
+ * 0.65 sits in the gap with margin on both sides. Re-measure if the embedding
+ * model changes: the number is a property of the model, not of the corpus.
  */
-const MIN_SIMILARITY = 0.5;
+const MIN_SIMILARITY = 0.65;
 
 let client: GoogleGenAI | null = null;
 
@@ -101,19 +132,47 @@ export function chunkText(text: string): string[] {
   );
 }
 
-/** Embed passages for storage. */
+/**
+ * How many passages are embedded at once.
+ *
+ * One request per passage, run a few at a time. The older embedding model
+ * accepted an array of texts and returned an array of vectors; the current one
+ * folds a multi-text request into a SINGLE vector, so passing six chunks got
+ * one embedding back and every upload failed the count check below. Embedding
+ * per passage is the only shape that is actually correct, and a small amount of
+ * concurrency keeps a long document from taking a request-at-a-time forever
+ * without hammering the quota.
+ */
+const EMBED_CONCURRENCY = 5;
+
+/** Embed passages for storage. Order is preserved — chunk i keeps vector i. */
 async function embedDocuments(texts: string[]): Promise<number[][]> {
   const ai = await getClient();
-  const res = await ai.models.embedContent({
-    model: EMBEDDING_MODEL,
-    contents: texts,
-    config: { taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: EMBEDDING_DIMENSIONS },
-  });
-  const embeddings = res.embeddings ?? [];
-  if (embeddings.length !== texts.length) {
+  const vectors: number[][] = new Array(texts.length);
+
+  for (let start = 0; start < texts.length; start += EMBED_CONCURRENCY) {
+    const slice = texts.slice(start, start + EMBED_CONCURRENCY);
+    const results = await Promise.all(
+      slice.map(async (text) => {
+        const res = await ai.models.embedContent({
+          model: EMBEDDING_MODEL,
+          contents: [text],
+          config: { taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: EMBEDDING_DIMENSIONS },
+        });
+        return res.embeddings?.[0]?.values ?? [];
+      }),
+    );
+    results.forEach((values, i) => {
+      vectors[start + i] = values;
+    });
+  }
+
+  // A passage with no vector cannot be searched, and storing it would leave a
+  // document that silently never matches anything.
+  if (vectors.some((v) => !v || v.length !== EMBEDDING_DIMENSIONS)) {
     throw new AppError(502, 'EMBEDDING_FAILED', 'The embedding service returned an unexpected result.');
   }
-  return embeddings.map((e) => e.values ?? []);
+  return vectors;
 }
 
 /** Embed a question. A different task type from the passages, deliberately. */

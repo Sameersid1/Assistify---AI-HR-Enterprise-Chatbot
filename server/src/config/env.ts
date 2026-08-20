@@ -64,6 +64,9 @@ const envSchema = z.object({
   // is the escape hatch that does not need a code change — see llm.groq.ts.
   GROQ_MODEL: z.string().trim().optional(),
   GEMINI_API_KEY: z.string().trim().optional(),
+  // Optional override — see the warning in documents/document.service.ts:
+  // changing this invalidates every stored vector.
+  EMBEDDING_MODEL: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

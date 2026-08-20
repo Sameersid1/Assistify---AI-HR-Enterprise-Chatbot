@@ -438,12 +438,31 @@ source rather than recall one.
    a split; without it that sentence belongs wholly to neither passage and ranks
    poorly in both. A single paragraph exceeding twice the target is hard-split.
 3. **Embedding.** Each passage is embedded once at upload using
-   `text-embedding-004` with `taskType: RETRIEVAL_DOCUMENT` and
-   `outputDimensionality: 256`.
+   `gemini-embedding-2` with `taskType: RETRIEVAL_DOCUMENT` and
+   `outputDimensionality: 256`. Passages are embedded individually rather
+   than as a batch: a multi-text request returns a single pooled vector, not
+   one vector per text.
 4. **Query.** The question is embedded with `taskType: RETRIEVAL_QUERY`.
 5. **Ranking.** Cosine similarity between the query vector and every passage
    vector belonging to the caller's tenant; top-k (k=4) above a similarity floor
-   of 0.5 is returned.
+   of 0.65 is returned.
+
+   **The floor is measured, not assumed — and this deserves a paragraph in the
+   paper.** It was first set to 0.5 by intuition, which rejected nothing:
+   embedding similarities for unrelated business English do not approach zero.
+   Measured against the sample corpus, on-topic questions matched at
+   0.730–0.768, while off-topic questions ("what is the office wifi
+   password?") still matched at 0.562–0.599. A floor of 0.5 therefore admitted
+   every off-topic query, and the system's ability to answer "the company has
+   not published a policy covering that" rested entirely on the language model
+   declining to use passages it had been handed. 0.65 sits inside the measured
+   gap with margin either side.
+
+   The general claim worth making: a retrieval floor is a property of the
+   embedding model, not of the corpus, and must be calibrated empirically.
+   The intuitive midpoint of a 0–1 similarity score sits below the noise
+   rather than above it, so a threshold chosen by reasoning about the number
+   line silently disables the very filter it was meant to provide.
 
 **Design decisions worth defending in the paper:**
 
