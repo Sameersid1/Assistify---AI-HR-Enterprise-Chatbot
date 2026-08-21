@@ -5,6 +5,7 @@ import { scoped } from '../../shared/tenantQuery';
 import { toObjectId } from '../../shared/objectId';
 import { DocumentModel, DocumentChunkModel } from './document.model';
 import { UserModel } from '../users/user.model';
+import * as auditService from '../audit/audit.service';
 import type { AuthContext } from '../../shared/types';
 import type { UploadDocumentInput } from './document.schema';
 
@@ -262,6 +263,13 @@ export async function uploadDocument(
       // Carried onto the chunk so retrieval can filter without a join.
       audienceEmploymentTypes,
     })),
+  );
+
+  await auditService.record(
+    auth,
+    'DOCUMENT_PUBLISHED',
+    `Published "${doc.title}" (${chunks.length} passages)${audienceEmploymentTypes.length ? ` for ${audienceEmploymentTypes.join(', ')}` : ''}`,
+    { id: doc._id, name: doc.title },
   );
 
   return toPublicDocument(doc);

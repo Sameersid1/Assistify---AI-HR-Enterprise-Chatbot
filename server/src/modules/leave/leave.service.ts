@@ -2,6 +2,7 @@ import type { Types } from 'mongoose';
 import { LeaveBalanceModel, LeaveRequestModel, LEAVE_TYPES, type LeaveType } from './leave.model';
 import { CompanyModel } from '../companies/company.model';
 import { UserModel } from '../users/user.model';
+import * as auditService from '../audit/audit.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { scoped } from '../../shared/tenantQuery';
 import { countWorkingDays, startOfTodayUtc, toUtcDate } from '../../shared/workdays';
@@ -33,6 +34,12 @@ export interface PublicLeaveRequest {
 }
 
 const asDateString = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** The applicant's name, copied into the audit entry so it survives a rename. */
+async function nameOf(userId: unknown): Promise<string | null> {
+  const u = await UserModel.findById(userId).select('fullName');
+  return u?.fullName ?? null;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toPublicBalance(balance: any): PublicLeaveBalance {
@@ -333,6 +340,13 @@ export async function approveLeave(
   request.decisionNote = note ?? null;
   await request.save();
 
+  await auditService.record(
+    auth,
+    'LEAVE_APPROVED',
+    `Approved ${request.days} day(s) ${request.type} leave, ${asDateString(request.fromDate)} to ${asDateString(request.toDate)}`,
+    { id: request.userId, name: await nameOf(request.userId) },
+  );
+
   return toPublicRequest(request);
 }
 
@@ -351,6 +365,13 @@ export async function rejectLeave(
   request.decidedAt = new Date();
   request.decisionNote = note;
   await request.save();
+
+  await auditService.record(
+    auth,
+    'LEAVE_REJECTED',
+    `Rejected ${request.days} day(s) ${request.type} leave, ${asDateString(request.fromDate)} to ${asDateString(request.toDate)} — "${note}"`,
+    { id: request.userId, name: await nameOf(request.userId) },
+  );
 
   return toPublicRequest(request);
 }

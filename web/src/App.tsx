@@ -13,6 +13,7 @@ import { EmployeesPage } from "@/pages/EmployeesPage"
 import { LeaveApprovalsPage } from "@/pages/LeaveApprovalsPage"
 import { DocumentsPage } from "@/pages/DocumentsPage"
 import { QuestionsPage } from "@/pages/QuestionsPage"
+import { AuditLogPage } from "@/pages/AuditLogPage"
 import { UsersPage } from "@/pages/UsersPage"
 
 /** Role sets — these mirror the server's requireRole guards. */
@@ -69,6 +70,10 @@ export function App() {
               <Route
                 path="users"
                 element={<ProtectedRoute roles={[...ADMIN_ONLY]}><UsersPage /></ProtectedRoute>}
+              />
+              <Route
+                path="audit"
+                element={<ProtectedRoute roles={[...ADMIN_ONLY]}><AuditLogPage /></ProtectedRoute>}
               />
             </Route>
 

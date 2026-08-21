@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   MessageSquareQuote,
+  ScrollText,
   Ticket,
   Users2,
   CalendarCheck,
@@ -176,6 +177,14 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           roles: ["admin"],
           badge: "RBAC",
           badgeVariant: "active",
+        },
+        {
+          // Admin-only, and deliberately not HR: HR appears in this log, and
+          // the people a record is about should not control what it says.
+          label: "Audit Trail",
+          icon: ScrollText,
+          href: "/app/audit",
+          roles: ["admin"],
         },
         {
           // Admin is a publisher role on the documents API, so it needs the

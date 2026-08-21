@@ -3,6 +3,7 @@ import { CompanyModel } from '../companies/company.model';
 import { ensureBalances } from '../leave/leave.service';
 import { generateToken, INVITATION_TTL_MS } from '../../shared/tokens';
 import { sendMail } from '../../shared/mailer';
+import * as auditService from '../audit/audit.service';
 import { toObjectId } from '../../shared/objectId';
 import { buildInvitationEmail } from './user.email';
 import { env, isProd } from '../../config/env';
@@ -181,6 +182,13 @@ export async function inviteUser(
   // exists the moment they activate rather than being created on first read.
   await ensureBalances(auth.companyId, user._id);
 
+  await auditService.record(
+    auth,
+    'USER_INVITED',
+    `Invited ${user.fullName} (${user.email}) as ${user.role}`,
+    { id: user._id, name: user.fullName },
+  );
+
   return { user: toPublicUser(user), ...(await deliverInvitation(user, token.raw)) };
 }
 
@@ -236,6 +244,8 @@ export async function deactivateUser(
   user.status = 'DEACTIVATED';
   user.refreshTokenHashes = [];
   await user.save();
+
+  await auditService.record(auth, 'USER_DEACTIVATED', `Deactivated ${user.fullName} (${user.email})`, { id: user._id, name: user.fullName });
   return toPublicUser(user);
 }
 
@@ -254,6 +264,8 @@ export async function reactivateUser(
 
   user.status = 'ACTIVE';
   await user.save();
+
+  await auditService.record(auth, 'USER_REACTIVATED', `Reactivated ${user.fullName} (${user.email})`, { id: user._id, name: user.fullName });
   return toPublicUser(user);
 }
 

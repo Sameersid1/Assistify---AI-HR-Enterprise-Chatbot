@@ -1,5 +1,6 @@
 import { QuestionModel } from './question.model';
 import { UserModel } from '../users/user.model';
+import * as auditService from '../audit/audit.service';
 import { scoped } from '../../shared/tenantQuery';
 import { toObjectId } from '../../shared/objectId';
 import { ConflictError, NotFoundError } from '../../shared/errors';
@@ -131,6 +132,13 @@ export async function answerQuestion(
   doc.answeredBy = auth.userId;
   doc.answeredAt = new Date();
   await doc.save();
+
+  await auditService.record(
+    auth,
+    'QUESTION_ANSWERED',
+    `Answered: "${doc.question.slice(0, 80)}"`,
+    { id: doc.askedBy, name: null },
+  );
 
   await doc.populate('askedBy', 'fullName email department');
   await doc.populate('answeredBy', 'fullName');

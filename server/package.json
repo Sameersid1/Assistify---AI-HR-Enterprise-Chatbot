@@ -17,9 +17,10 @@
     "test:permissions": "tsx src/scripts/permission-matrix.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "echo \"no tests yet\" && exit 0",
+    "test": "npm run typecheck && npm run test:llm && npm run test:audience",
     "test:llm": "tsx scripts/verify-llm.mjs",
-    "test:audience": "tsx scripts/verify-audience.mjs"
+    "test:audience": "tsx scripts/verify-audience.mjs",
+    "test:ops": "tsx scripts/verify-ops.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",
@@ -32,6 +33,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",

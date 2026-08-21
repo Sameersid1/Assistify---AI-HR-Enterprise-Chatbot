@@ -232,3 +232,16 @@ export interface CompanyQuestion {
   askedBy?: { id: string; fullName: string; email: string; department: string | null }
   answeredBy?: { fullName: string } | null
 }
+
+/* ── Audit trail ─────────────────────────────────────────────────────────── */
+
+export interface AuditLogEntry {
+  id: string
+  action: string
+  /** Name as it was when the action happened — not joined live. */
+  actorName: string
+  actorRole: string
+  targetName: string | null
+  summary: string
+  createdAt: string
+}
