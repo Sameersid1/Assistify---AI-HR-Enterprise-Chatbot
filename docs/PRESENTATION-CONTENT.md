@@ -618,8 +618,9 @@ Limitations
 • Some dashboard screens still render placeholder data pending
   API integration
 • No automated test suite — verification was manual
-• No rate limiting on authentication endpoints
-• No audit log for sensitive administrative actions
+• No automated regression suite in CI (scripts exist and pass; nothing runs them on push)
+• Indirect prompt injection through uploaded documents is not mitigated —
+  bounded by role-scoped tools, but not prevented
 • Free-tier hosting sleeps when idle, causing a cold-start delay
 ```
 
@@ -654,7 +655,7 @@ Near term
 Medium term
 • Recurring escalations promoted into policy documents automatically
 • Retrieval recall measured over a larger corpus
-• Audit logging of every tool invocation
+• Extending the audit trail to individual tool invocations
 • Automated regression suite in CI
 
 Longer term

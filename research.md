@@ -262,7 +262,7 @@ does not solve it (free email providers, contractors, multi-domain companies).
 | Access | 15 min | not stored | carries `userId`, `companyId`, `role` |
 | Refresh | 7 days | SHA-256 hash on user document | rotated on every use |
 | Invitation | 72 h | SHA-256 hash | single use, burned on activation |
-| Password reset | 1 h | SHA-256 hash | implemented as a utility; endpoint not built |
+| Password reset | 1 h | SHA-256 hash | implemented: request, reset, and change-while-signed-in |
 
 **Refresh token rotation with reuse detection:** each refresh removes the used
 token's hash and stores a new one. A token with a valid signature whose hash is
@@ -960,8 +960,8 @@ deliberate boundaries and honest gaps, not unfinished work — write them that w
 | Indirect prompt injection via retrieved documents | Retrieved passages enter the context as text. Exposure is bounded — a document cannot name a tool the caller does not hold — but passages are not sanitised or delimited. See the threat model in Part 3.12. |
 | IT ticketing and HR analytics | Out of scope for this paper; the contribution concerns authorization under tool calling, not feature breadth |
 | Automated test suite | Verification was manual and script-assisted |
-| Rate limiting on auth endpoints | `/auth/login` is brute-forceable; Argon2id raises cost but is mitigation, not prevention |
-| Audit log | `decidedBy`/`invitedBy` capture some provenance; no append-only trail |
+| ~~Rate limiting~~ — now implemented | Three limits: the assistant (20/5 min, keyed per user), authentication (30/15 min, keyed by IP since there is no user yet), and a general backstop. In-memory, so a second instance would allow the quota twice — a shared store is needed to scale horizontally |
+| ~~Audit log~~ — now implemented | Append-only trail of decisions that change a person's record. Actor names are copied in rather than joined, so entries do not change retroactively when a profile is edited. Readable by administrators only, not HR, who appear in it. The write never throws — a failed log must not roll back the action it describes, which trades completeness for availability |
 | Pagination | List endpoints return all rows for a tenant |
 | Multi-document transactions | Approve performs two writes non-atomically |
 | `super_admin` interface | The role exists in the model and the creation whitelist; no dedicated screen |
