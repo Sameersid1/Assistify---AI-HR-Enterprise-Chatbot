@@ -323,6 +323,18 @@ application — say it out loud rather than leaving the slide looking thin.
 
 7. Notification Module
    Transactional email with SMTP and HTTPS transports
+
+8. AI Assistant Module
+   Tool-calling chat over the service layer, streamed to the browser.
+   Tools built per request from the caller's role
+
+9. Knowledge Retrieval Module
+   Policy documents chunked, embedded and ranked by cosine similarity.
+   Passages filtered by the reader's employment type before ranking
+
+10. Escalation Module
+    Unanswerable questions forwarded to HR with the asker's consent,
+    answered in the portal, read back by the assistant on request
 ```
 
 **SAY THIS**
@@ -330,6 +342,11 @@ application — say it out loud rather than leaving the slide looking thin.
 Modules 5 and 6 are marked cross-cutting because they aren't screens — they run
 on every request. Saying that shows you understand the difference between a
 feature and an architectural concern.
+
+Modules 8 and 9 are where the project's contribution sits. If asked which one
+matters, say module 8: the tool list is rebuilt for every request from the
+caller's role, so an employee's assistant is never told the company-wide tools
+exist. Module 9 applies the same idea to documents.
 
 ---
 
@@ -627,31 +644,35 @@ That's a defensible engineering sequence, and it's true.
 **ON THE SLIDE**
 
 ```
-Phase 1 — AI Assistant (designed, next to build)
-• Conversational interface over the existing HR APIs
-• Tool calling: the assistant invokes real functions (leave balance,
-  apply for leave) rather than generating answers from memory
-• Tools execute under the caller's own permissions — the assistant
-  can never exceed what the user is already allowed to do
+Near term
+• Real-time push for notifications (server-sent events; the chat
+  stream already uses them, so the plumbing exists)
+• Server-side PDF and Word parsing — text is pasted today
+• HR settings screen for per-employment-type leave entitlement,
+  which is currently configured in the company record
 
-Phase 2 — Enterprise Knowledge Search
-• Upload and index company policy documents
-• Retrieval-augmented generation with vector search
-• Retrieval filtered by company, so no cross-tenant policy leakage
+Medium term
+• Recurring escalations promoted into policy documents automatically
+• Retrieval recall measured over a larger corpus
+• Audit logging of every tool invocation
+• Automated regression suite in CI
 
-Phase 3 — Platform Completion
-• IT ticketing module
-• HR analytics dashboard
-• Automated test suite and audit logging
+Longer term
+• IT ticketing as a second assistant surface
+• HR analytics over the escalation record — which questions recur
 • Mobile application
+• Dedicated vector store when the corpus outgrows an in-application scan
 ```
 
 **SAY THIS**
 
-The line that impresses — *"tools execute under the caller's own permissions"* —
-means a user can't get the AI to fetch data they couldn't fetch themselves. Say
-it. It shows the AI plan inherits the security model rather than bypassing it,
-which is the mistake most people make.
+Everything on this slide is genuinely *not* built. The assistant and knowledge
+search that used to sit here are finished — do not leave them on a future-work
+slide, because an examiner who has just watched the demo will notice.
+
+The item worth speaking to is the second in Medium term: a question that keeps
+being escalated is evidence of a missing policy document, and promoting it
+automatically closes the loop the system already opens by hand.
 
 ---
 
@@ -673,6 +694,11 @@ Technical Outcomes Achieved
 • Public code repository with documented architecture decisions
 • Complete authentication and onboarding system verified end to end
 • Leave management module with concurrency-safe balance handling
+• Tool-calling AI assistant with role-scoped capability exposure
+• Retrieval over policy documents, scoped by employment type,
+  with an empirically calibrated similarity floor
+• Escalation path from the assistant to HR and back
+• Multi-provider LLM failover, verified under a live rate limit
 ```
 
 **SAY THIS**

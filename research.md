@@ -94,6 +94,48 @@ refusal.
 - The withheld capability never enters the context window, so no adversarial
   prompt can reference it.
 
+**The claim generalises to knowledge, not only capability.** Role-scoped tool
+exposure withholds *what the assistant can do*. The same argument applies
+unchanged to *what it can read*. Policy documents in this system carry an
+audience; retrieval filters passages by the caller's employment type before
+ranking, so an intern's assistant never receives a passage written for
+full-time staff. It cannot quote it, summarise it, or be argued into
+disclosing it, for exactly the reason it cannot invoke a tool it was never
+given: the content never enters the context window.
+
+This yields **two scoping dimensions enforced by one mechanism**:
+
+| Dimension | Withheld from the model | Decided by |
+|---|---|---|
+| Capability | Tool declarations | Caller's role |
+| Knowledge | Retrieved passages | Caller's employment type |
+
+Both are resolved from the verified access token, never from the request body
+or the conversation. A caller may describe themselves however they like and
+cannot widen either set. Stating it as one principle across two dimensions is
+a stronger claim than either instance alone, and it is what makes the finding
+a design rule rather than an implementation detail.
+
+**One critical detail — filter before ranking, not after.** It is tempting to
+retrieve over the whole corpus and discard inapplicable passages afterwards.
+That is wrong twice: an excluded passage still occupies one of the top-k slots,
+so the caller silently receives *less* context rather than *different* context;
+and it is loaded and compared regardless, which is the cost the filter exists to
+avoid. The predicate belongs in the database query, exactly where the tenancy
+predicate already sits.
+
+**A consistency hazard this exposed.** Audience-scoped documents introduced a
+second source of truth for the same fact. Asked "how many annual leave days am
+I entitled to", the model preferred a structured tool over document retrieval —
+and that tool read a single company-wide figure with no notion of employment
+type, while the retrieved intern policy said something different. The assistant
+therefore held two contradicting answers to one question, and returned the
+wrong one with a citation attached. The fix is a single resolver that both the
+entitlement allocator and the assistant's tool call, so the figure a person is
+granted and the figure they are quoted cannot diverge. **Generalisable lesson:**
+introducing per-audience knowledge into a system whose structured data is not
+also per-audience creates a silent contradiction, and the retrieval layer will
+lose to the structured tool because models prefer direct lookups.
 **Secondary contributions (smaller, still worth stating):**
 - Model-generated tool arguments are treated as untrusted input and validated
   with the *same* schema used for the corresponding HTTP endpoint.
@@ -565,6 +607,95 @@ hosting platform, and malicious operators.
 
 ---
 
+### 3.13 Audience-scoped retrieval
+
+Each document carries `audienceEmploymentTypes`, an array. **Empty means it
+applies to everyone** — the correct default for a staff handbook, and the value
+every document uploaded before the field existed already has, so the change is
+backward compatible by construction.
+
+The audience is denormalised onto each chunk at upload. Retrieval is a single
+query with two predicates — tenant and audience — and no join on the hot path.
+This is safe because a document has no update endpoint: upload and delete only,
+so a stored audience cannot drift from its parent.
+
+```
+companyId: <from token>
+$or: [ { audienceEmploymentTypes: { $size: 0 } },     // applies to everyone
+       { audienceEmploymentTypes: <caller's type> } ] // applies to them
+```
+
+Verified against a live MongoDB with seven assertions, including that a user
+whose employment type is unset falls back to FULL_TIME rather than to *all*
+documents, and that audience scoping never widens tenancy.
+
+### 3.14 A single resolver for entitlement
+
+Leave entitlement varies by employment type. The company record holds a default
+plus optional per-type overrides, each field falling back independently:
+
+```
+entitlementFor(company, employmentType) =
+  override[type]?.field  ??  company.leavePolicy.field
+```
+
+Both the balance allocator and the assistant's policy tool call this one
+function — see the consistency hazard in Part 2. Existing balance rows are
+never rewritten (`$setOnInsert`): an allocation records what a person was
+granted for that year, and revising it mid-year would retract days already
+booked against it.
+
+### 3.15 Provider abstraction and failover
+
+The assistant runs against Groq (primary) and Gemini (fallback), behind a
+neutral interface. Two properties are worth reporting:
+
+**The tool loop is not duplicated.** It is the enforcement point for
+role-scoped tools, and a second copy is how a future fix reaches one path and
+not the other. There is one loop written against provider-neutral types, and a
+thin adapter per provider. The security-critical module does not know which
+provider is running and did not change when the second was added.
+
+**Failover holds only until the first token reaches the client.** After that
+the answer is partly read, and restarting elsewhere would splice two different
+answers mid-sentence; a failure is then reported rather than concealed.
+Non-retryable statuses (400, 401) skip failover entirely, since every provider
+rejects them identically.
+
+The practical motivation is worth one sentence in the paper: the free tier of
+the original provider permitted roughly twenty requests per day, which is
+adequate for development and unusable for evaluation or demonstration.
+
+### 3.16 Escalation — closing the loop on retrieval failure
+
+A retrieval system that correctly declines to answer still leaves the asker
+without an answer and the organisation unaware of the gap. The assistant may
+therefore forward an unanswerable question to HR, **only with the asker's
+explicit agreement in the conversation**. It offers, waits, and forwards on a
+yes.
+
+The record carries the question, the asker, and the assistant's own reason for
+failing — so the human answers the gap rather than repeating a refusal the
+person has already read. HR replies in the portal; the asker is notified; a
+further tool lets the assistant read the answer back on request.
+
+Two design decisions are defensible in the paper:
+
+- **Opt-in, not automatic.** Logging every failed answer would both bury the
+  recipient and silently record what people ask an assistant, which is a
+  retention decision rather than an engineering one.
+- **A message, not a ticket.** No category, priority, assignment or reopen
+  path. Four fields — asker, question, reply, status — carry the entire
+  workflow, and each additional field would encode a process nobody agreed to
+  operate.
+
+The answer is deliberately *not* injected into the chat transcript, which is
+client-side and which the server does not retain. It lives in its own record
+and is reachable *from* chat through a tool — preserving the property that
+every fact the assistant states comes from a tool call rather than from
+conversational memory.
+
+---
 ## PART 4 — WHAT WAS BUILT AND VERIFIED
 
 - Invitation → activation → login → token refresh → logout, end to end
@@ -659,10 +790,41 @@ Record and report means over ≥20 samples: login, leave application, assistant
 response without a tool call, assistant response with a tool call. Note that a
 tool-calling turn requires ≥2 model round trips.
 
-### 5.7 Retrieval quality — RUN THIS, retrieval is now implemented
+### 5.7 Retrieval quality — PARTLY MEASURED
 
-Upload 3–5 real policy documents. Write 20 questions whose answers you know are
-in them, plus 5 whose answers are definitely not.
+**Already measured: the similarity floor.** This result is worth a short
+subsection of its own, because it is a finding rather than a number.
+
+The floor below which a retrieved passage is discarded was initially set to
+0.5 — the intuitive midpoint of a 0–1 cosine similarity. Measured against the
+sample corpus (three documents, sixteen passages, 256-dimension embeddings),
+it rejected nothing:
+
+| Question type | Best-match similarity |
+|---|---|
+| On-topic (answer present in corpus) | 0.730 – 0.768 |
+| Off-topic ("what is the office wifi password?") | 0.562 – 0.599 |
+
+Unrelated business English does not approach zero similarity. A floor of 0.5
+therefore admitted **every** off-topic query, and the system's ability to
+answer "no published policy covers that" rested entirely on the language model
+declining to use passages it had already been handed — not on retrieval. The
+floor was moved to 0.65, inside the measured gap.
+
+**State the general claim, not just the number:** a retrieval floor is a
+property of the embedding model, not of the corpus, and must be calibrated
+empirically. A threshold chosen by reasoning about the number line sits below
+the noise and silently disables the filter it was introduced to provide. Any
+system reporting a similarity cut-off without reporting how it was chosen has
+probably made this mistake.
+
+**Also measured:** two embedding models were compared on the same corpus before
+selection. `gemini-embedding-2` separated on-topic from off-topic by ~0.13,
+against ~0.10 for `gemini-embedding-001`; the wider margin was the selection
+criterion, not benchmark scores.
+
+**Still to run: recall.** Upload the sample corpus, write 20 questions whose
+answers you know are in it, plus 5 whose answers are definitely not.
 
 For each, record: whether the correct passage appeared in the top-4, its rank,
 and whether the assistant's final answer was faithful to the retrieved text.
@@ -675,6 +837,47 @@ retrieved passages).
 Also worth reporting: retrieval is deterministic given a fixed corpus, so unlike
 generation these numbers are reproducible.
 
+### 5.8 Audience isolation — VERIFIED, and a headline result
+
+The second scoping dimension is testable exactly as the first is, and the
+experiment is short enough to describe in full in the paper.
+
+**Setup.** Three documents: a handbook with no audience restriction, and two
+deliberately contradicting leave policies — one scoped to full-time staff (18
+annual days), one to interns (6). Two accounts differing only in employment
+type.
+
+**Result (verified end to end against a live model and database):**
+
+| Prompt | Intern | Full-time employee |
+|---|---|---|
+| "How many annual leave days am I entitled to?" | 6 | 18 |
+| "I lost my ID card, what should I do?" | answered from handbook | answered from handbook |
+| "What does the full-time policy say about carry-over?" | cannot answer | n/a |
+
+The third row is the one to argue from. The assistant does not *refuse* — it
+reports that it only searches documents applying to the reader's employment
+type. It has no passage to summarise, paraphrase or be argued into revealing,
+for the same structural reason it cannot invoke a tool it was never given.
+
+**Database-level verification** (7 assertions, live MongoDB): each employment
+type sees exactly the company-wide documents plus its own; a user with no
+employment type set falls back to full-time rather than to everything;
+audience scoping never widens tenancy; and excluded passages are never loaded,
+confirming the filter runs in the query rather than after ranking.
+
+### 5.9 Escalation — VERIFIED
+
+Seven-step round trip, verified against a live model: the assistant declines to
+forward without permission; offers; forwards on agreement; the question reaches
+the approver queue carrying the asker and the assistant's stated reason for
+failing; an employee attempting to read the company-wide queue is refused
+(`FORBIDDEN`); HR answers; the asker sees it; and the assistant reads the
+answer back correctly when asked whether HR replied.
+
+Worth reporting as the loop closing: an unanswerable question becomes a human
+answer, and — if it recurs — a published document, after which retrieval
+answers it without a human at all.
 ### 5.6 What you must NOT report
 
 No user study, no satisfaction scores, no "reduced HR workload by X%", no
