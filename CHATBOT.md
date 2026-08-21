@@ -30,10 +30,12 @@ free tier — no card, no trial that expires.
 7. [Step 5 — the chat page](#7-step-5--the-chat-page)
 8. [Step 6 — streaming the answer as it is written](#8-step-6--streaming-the-answer-as-it-is-written)
 9. [Step 7 — two AI providers, so the demo cannot run out](#9-step-7--two-ai-providers-so-the-demo-cannot-run-out)
-10. [What's still missing](#10-whats-still-missing)
-11. [How to run it](#11-how-to-run-it)
-12. [Two problems we hit and how we fixed them](#12-two-problems-we-hit-and-how-we-fixed-them)
-13. [Questions you will get asked](#13-questions-you-will-get-asked)
+10. [Step 8 — the right policy for the right person](#10-step-8--the-right-policy-for-the-right-person)
+11. [Step 9 — when it cannot answer, it asks a human](#11-step-9--when-it-cannot-answer-it-asks-a-human)
+12. [What's still missing](#12-whats-still-missing)
+13. [How to run it](#13-how-to-run-it)
+14. [Two problems we hit and how we fixed them](#14-two-problems-we-hit-and-how-we-fixed-them)
+15. [Questions you will get asked](#15-questions-you-will-get-asked)
 
 ---
 
@@ -585,7 +587,84 @@ headroom plus a spare.
 
 ---
 
-## 10. What's still missing
+## 10. Step 8 — the right policy for the right person
+
+An intern and a full-time employee get different leave. If both policies are
+uploaded, the bot has to know which one applies to whoever is asking.
+
+Each document is tagged with **who it applies to** when HR uploads it. Nothing
+ticked means everyone — right for a handbook. Tick "Intern" and the assistant
+will never read it to anybody else.
+
+The person's employment type comes from their own account record, set by HR on
+the invite form. So nobody has to declare anything.
+
+### The bit that is easy to get wrong
+
+The obvious way: search everything, then throw away what does not apply.
+**That is wrong.** The assistant reads the best 4 passages. If a full-time
+passage ranks 2nd and gets thrown away afterwards, the intern is left with 3
+instead of 4 — they get a *worse* answer, not a different one. And the passage
+was loaded and compared anyway.
+
+So the filter goes into the database query. Excluded passages are never loaded,
+never ranked, never counted.
+
+### Why this matters for the project
+
+It is the same idea as role-scoped tools, applied twice:
+
+| | What is withheld | Decided by |
+|---|---|---|
+| Tools | What the assistant can **do** | Your role |
+| Documents | What it can **read** | Your employment type |
+
+Ask an intern "what does the full-time policy say?" and it genuinely cannot
+answer — not because it refuses, but because it never saw the text.
+
+---
+
+## 11. Step 9 — when it cannot answer, it asks a human
+
+The assistant used to hit a dead end: "I cannot answer that, contact HR" — with
+no way to actually do it, and no record that anyone had asked.
+
+Now it offers:
+
+> **You:** does the company match pension contributions?
+> **Assistant:** I could not find any published policy covering that. I can
+> pass this to HR for you — shall I send it over?
+> **You:** yes
+> **Assistant:** Done. You will get a notification when they reply.
+
+HR sees it on a **Questions for HR** page with the asker's name and the reason
+the assistant failed — so they answer the gap rather than repeating the refusal
+you already read. They reply, you get notified, and you can also just ask the
+bot "did HR answer yet?".
+
+### Two decisions worth explaining
+
+**It only sends when you say yes.** Recording every failed answer would bury HR
+under "what is the wifi password", and quietly logging everything people ask an
+assistant is a privacy decision nobody made.
+
+**It is a message, not a ticket.** No categories, no priority, no assignment.
+Four things matter: who asked, what they asked, the reply, and whether it is
+answered. Every extra field would be a process nobody agreed to run.
+
+### Where the answer goes — and why not into the chat
+
+The chat history lives in **your browser**, not on the server. The server keeps
+no conversations at all. So it literally cannot put a message into your chat
+history — there is none to put it in.
+
+Instead the answer lives in its own record, both people are told by the
+notification bell, and the assistant can *read* it back through a tool. Every
+fact it states still comes from a tool call, never from memory of a
+conversation. The architecture does not bend.
+
+---
+## 12. What's still missing
 
 Be upfront about this — it is the honest answer and it is a short list.
 
@@ -599,7 +678,7 @@ Be upfront about this — it is the honest answer and it is a short list.
 
 ---
 
-## 11. How to run it
+## 13. How to run it
 
 **1. Get a free API key** from
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Sign in with a
@@ -644,7 +723,7 @@ assistant answered. The employee case should be a chat bubble.
 
 ---
 
-## 12. Two problems we hit and how we fixed them
+## 14. Two problems we hit and how we fixed them
 
 Worth knowing, because they are the kind of thing an examiner may ask about.
 
@@ -681,7 +760,7 @@ permission system. That is why the tool list is built per user.
 
 ---
 
-## 13. Questions you will get asked
+## 15. Questions you will get asked
 
 **"Is the AI connected to your database?"**
 > Not directly. It can request specific functions we wrote, and our server runs
