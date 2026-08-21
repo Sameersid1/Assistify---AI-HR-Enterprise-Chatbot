@@ -9,10 +9,14 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from './auth.jwt';
-import { hashRawToken } from '../../shared/tokens';
+import { generateToken, hashRawToken, RESET_TTL_MS } from '../../shared/tokens';
+import { sendMail } from '../../shared/mailer';
+import { env } from '../../config/env';
+import { buildPasswordResetEmail } from './auth.reset.email';
 import {
   ConflictError,
   ForbiddenError,
+  NotFoundError,
   UnauthorizedError,
   ValidationError,
 } from '../../shared/errors';
@@ -199,4 +203,106 @@ export async function getMe(userId: Types.ObjectId): Promise<PublicUser> {
   const user = await UserModel.findById(userId);
   if (!user) throw new UnauthorizedError();
   return toPublicUserWithCompany(user);
+}
+
+/* ── Password reset ─────────────────────────────────────────────────────── */
+
+/**
+ * POST /auth/forgot-password
+ *
+ * ⚠️ ALWAYS REPORTS SUCCESS, even for an address that has no account.
+ *
+ * The alternative leaks membership: an attacker submits addresses and learns
+ * which ones work here. That matters more than it first appears — knowing
+ * someone has an account at a company is itself information, and it turns a
+ * guess into a target. This is the same reasoning that made the sign-in page
+ * return one message for every kind of failure.
+ *
+ * Real errors are logged server-side, so a genuinely broken mail transport is
+ * still visible to us.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const user = await UserModel.findOne({ email: email.toLowerCase().trim() });
+
+  // Silent no-op for unknown, never-activated and deactivated accounts alike.
+  // A deactivated person resetting their password would be able to sign in.
+  if (!user || user.status !== 'ACTIVE' || !user.passwordHash) return;
+
+  const token = generateToken(RESET_TTL_MS);
+  user.resetTokenHash = token.hash;
+  user.resetExpiresAt = token.expiresAt;
+  await user.save();
+
+  const company = await CompanyModel.findById(user.companyId).select('name');
+  const mail = buildPasswordResetEmail({
+    fullName: user.fullName,
+    companyName: company?.name ?? 'your company',
+    resetUrl: `${env.CLIENT_URL}/reset-password?token=${token.raw}`,
+    expiresInMinutes: Math.round(RESET_TTL_MS / 60_000),
+  });
+
+  const result = await sendMail({ ...mail, to: user.personalEmail || user.email });
+  if (!result.sent) {
+    // eslint-disable-next-line no-console
+    console.error(`✉️  Password reset email failed for ${user.email}: ${result.error}`);
+  }
+}
+
+/**
+ * POST /auth/reset-password
+ *
+ * Signing in is deliberately NOT automatic here, unlike activation. Activation
+ * is someone setting a password for the first time from a link only they
+ * received; a reset may be the tail end of an account someone else tried to
+ * take. Making them sign in with the new password confirms they know it.
+ */
+export async function resetPassword(rawToken: string, newPassword: string): Promise<void> {
+  const user = await UserModel.findOne({ resetTokenHash: hashRawToken(rawToken) });
+  if (!user) {
+    throw new ValidationError('Invalid or already-used reset link', 'RESET_INVALID');
+  }
+  if (!user.resetExpiresAt || user.resetExpiresAt.getTime() < Date.now()) {
+    throw new ValidationError('That reset link has expired — request a new one', 'RESET_EXPIRED');
+  }
+  if (user.status !== 'ACTIVE') {
+    throw new ConflictError('This account is not active', 'NOT_ACTIVE');
+  }
+
+  user.passwordHash = await hashPassword(newPassword);
+  user.resetTokenHash = null; // burn it — single use
+  user.resetExpiresAt = null;
+  // Every existing session dies. If the reset happened because someone else had
+  // the account, leaving their refresh token alive would defeat the whole point.
+  user.refreshTokenHashes = [];
+  await user.save();
+}
+
+/**
+ * POST /auth/change-password — for someone already signed in.
+ *
+ * The current password is required even though the caller is authenticated: an
+ * unattended logged-in laptop should not be enough to lock the owner out of
+ * their own account.
+ */
+export async function changePassword(
+  userId: Types.ObjectId,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const user = await UserModel.findById(userId);
+  if (!user || !user.passwordHash) throw new NotFoundError('User not found');
+
+  const ok = await verifyPassword(user.passwordHash, currentPassword);
+  if (!ok) {
+    throw new ValidationError('That is not your current password', 'PASSWORD_INCORRECT');
+  }
+  if (await verifyPassword(user.passwordHash, newPassword)) {
+    throw new ValidationError('The new password must be different', 'PASSWORD_UNCHANGED');
+  }
+
+  user.passwordHash = await hashPassword(newPassword);
+  // Other devices are signed out; this one keeps working because its access
+  // token is already issued and short-lived.
+  user.refreshTokenHashes = [];
+  await user.save();
 }

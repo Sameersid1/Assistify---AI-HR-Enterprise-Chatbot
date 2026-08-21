@@ -1,7 +1,14 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../shared/apiResponse';
 import { getAuth } from '../../shared/types';
-import { activateSchema, loginSchema, refreshSchema } from './auth.schema';
+import {
+  activateSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  refreshSchema,
+  resetPasswordSchema,
+} from './auth.schema';
 import * as authService from './auth.service';
 
 /** POST /api/v1/auth/login */
@@ -43,4 +50,33 @@ export async function meController(req: Request, res: Response): Promise<void> {
   const auth = getAuth(req);
   const user = await authService.getMe(auth.userId);
   sendSuccess(res, { user });
+}
+
+/**
+ * POST /api/v1/auth/forgot-password
+ *
+ * Always 200, whatever the address. See requestPasswordReset — reporting
+ * whether an account exists turns a guess into a target.
+ */
+export async function forgotPasswordController(req: Request, res: Response): Promise<void> {
+  const { email } = forgotPasswordSchema.parse(req.body);
+  await authService.requestPasswordReset(email);
+  sendSuccess(res, {
+    message: 'If that address has an account, a reset link is on its way.',
+  });
+}
+
+/** POST /api/v1/auth/reset-password */
+export async function resetPasswordController(req: Request, res: Response): Promise<void> {
+  const { token, password } = resetPasswordSchema.parse(req.body);
+  await authService.resetPassword(token, password);
+  sendSuccess(res, { message: 'Password updated. Sign in with your new password.' });
+}
+
+/** POST /api/v1/auth/change-password — signed in. */
+export async function changePasswordController(req: Request, res: Response): Promise<void> {
+  const auth = getAuth(req);
+  const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+  await authService.changePassword(auth.userId, currentPassword, newPassword);
+  sendSuccess(res, { message: 'Password changed. Other devices have been signed out.' });
 }

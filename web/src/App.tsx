@@ -14,6 +14,8 @@ import { LeaveApprovalsPage } from "@/pages/LeaveApprovalsPage"
 import { DocumentsPage } from "@/pages/DocumentsPage"
 import { QuestionsPage } from "@/pages/QuestionsPage"
 import { AuditLogPage } from "@/pages/AuditLogPage"
+import { SettingsPage } from "@/pages/SettingsPage"
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage"
 import { UsersPage } from "@/pages/UsersPage"
 
 /** Role sets — these mirror the server's requireRole guards. */
@@ -36,6 +38,10 @@ export function App() {
                 query form is the one that actually gets used; the /:token
                 path variant is kept as a convenience alias. */}
             <Route path="/activate" element={<ActivationPage />} />
+            {/* One route, two screens: no token asks for an email, a token asks
+                for a new password. */}
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/forgot-password" element={<ResetPasswordPage />} />
             <Route path="/activate/:token" element={<ActivationPage />} />
 
             {/* ── Authenticated shell ───────────────────────────────────── */}
@@ -51,6 +57,7 @@ export function App() {
               <Route index element={<DashboardPage />} />
               <Route path="chat" element={<ChatPage />} />
               <Route path="documents" element={<DocumentsPage />} />
+              <Route path="settings" element={<SettingsPage />} />
               {/* Both sides live here: approvers get the queue, everyone else
                   gets their own questions. The server decides which. */}
               <Route path="questions" element={<QuestionsPage />} />

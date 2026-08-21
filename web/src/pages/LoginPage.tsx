@@ -276,7 +276,7 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <button
                   type="button"
-                  onClick={() => alert("Please contact your IT/HR administrator for password reset.")}
+                  onClick={() => navigate("/forgot-password")}
                   className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline"
                 >
                   Forgot password?

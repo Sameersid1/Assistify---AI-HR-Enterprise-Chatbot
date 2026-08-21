@@ -85,6 +85,13 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/questions",
           roles: ["employee"],
         },
+        {
+          // Every role gets this — it is their own account, not a privilege.
+          label: "Settings",
+          icon: Settings,
+          href: "/app/settings",
+          roles: ["employee"],
+        },
       ],
     },
   ],
@@ -156,6 +163,13 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           href: "/app/apply-leave",
           roles: ["hr"],
         },
+        {
+          // Every role gets this — it is their own account, not a privilege.
+          label: "Settings",
+          icon: Settings,
+          href: "/app/settings",
+          roles: ["hr"],
+        },
       ],
     },
   ],
@@ -215,6 +229,13 @@ export const NAVIGATION_GROUPS: Partial<Record<UserRole, NavGroup[]>> = {
           label: "Apply for Leave",
           icon: CalendarPlus,
           href: "/app/apply-leave",
+          roles: ["admin"],
+        },
+        {
+          // Every role gets this — it is their own account, not a privilege.
+          label: "Settings",
+          icon: Settings,
+          href: "/app/settings",
           roles: ["admin"],
         },
       ],

@@ -34,3 +34,23 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 export type RefreshInput = z.infer<typeof refreshSchema>;
+
+/** POST /auth/forgot-password — an email address, nothing else. */
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/** POST /auth/reset-password — the emailed token plus the new password. */
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(1, 'Reset token is required'),
+  password: passwordRules,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+/** POST /auth/change-password — signed in, and proving they know the old one. */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Enter your current password'),
+  newPassword: passwordRules,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

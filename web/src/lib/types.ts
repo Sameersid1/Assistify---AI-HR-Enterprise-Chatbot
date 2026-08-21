@@ -33,6 +33,8 @@ export interface User {
   department?: string
   designation?: string
   employeeId?: string
+  /** Shown on Settings, and it decides which policies the assistant reads. */
+  employmentType?: EmploymentType
   avatarUrl?: string
 }
 
@@ -47,6 +49,7 @@ export function toUser(api: ApiUser): User {
     department: api.department,
     designation: api.designation,
     employeeId: api.employeeId,
+    employmentType: api.employmentType,
   }
 }
 
