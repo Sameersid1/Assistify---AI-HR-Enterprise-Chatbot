@@ -368,3 +368,126 @@ each is defensible if you want the contribution to look broader.
 | Append-only audit trail of decisions, readable by administrators but not HR, who appear in it | §IV-A, one row in the properties table |
 | Per-employment-type entitlement resolved through a single function shared by the allocator and the assistant's tool | §IV-D; this is what prevents the assistant quoting a figure that contradicts the balance it allocated |
 | Password reset and rate limiting | §IV-G, one sentence — both are now implemented and §VI should not list them as future work |
+
+---
+
+## 9. Section V-G — the three missing experiments have now been run
+
+Delete §V-G ("Measurements Still Required") entirely. Every `[AUTHOR: data
+needed]` marker is now resolved. Substitute the three subsections below,
+renumbering so they become **G, H and I**, with the Conclusion unchanged.
+
+### G. Concurrency Safety of Balance Reservation
+
+Leave reservation is a single conditional update: a `findOneAndUpdate` whose
+filter asserts that the requested days do not exceed the available balance,
+evaluated by the database rather than by the application. The experiment tests
+whether simultaneous applications can over-allocate.
+
+Twelve applications of two working days each were dispatched concurrently
+against an allocation of ten days, using non-overlapping date ranges so that no
+request could be refused for overlapping another. All twelve were issued in
+parallel so that they contend inside the database rather than being serialised
+by the client.
+
+**TABLE VIII — CONCURRENCY UNDER SIMULTANEOUS APPLICATION**
+
+| Metric | Result |
+|---|---|
+| Allocation | 10 days |
+| Concurrent applications | 12 × 2 days |
+| Theoretical maximum acceptances | 5 |
+| Accepted | 5 |
+| Rejected | 7 (all `LEAVE_INSUFFICIENT_BALANCE`) |
+| Final reserved days | 10 of 10 |
+| Available balance | 0 — never negative |
+
+Exactly ⌊10/2⌋ = 5 requests succeeded. No request was rejected for any reason
+other than insufficient balance, and the reserved total matched the accepted
+count precisely, confirming that no partial or duplicated reservation occurred.
+
+The result is a property of where the check is performed. A read-then-write
+sequence — read the balance, decide, then write — admits a window in which two
+requests both read a sufficient balance before either writes. Expressing the
+condition inside the update statement eliminates the window entirely: the
+second request matches no document and is refused. This is worth stating
+because the same code written in the obvious order would pass every functional
+test and fail only under contention.
+
+### H. Latency
+
+Latency was measured from the client, so each figure includes network transit,
+framework overhead, validation, database access and, where applicable, model
+inference. Median is reported alongside mean because a single cold start
+distorts a mean of twenty far more than it distorts the experience being
+described.
+
+**TABLE IX — OPERATION LATENCY (ms)**
+
+| Operation | n | Mean | Median | Range |
+|---|---|---|---|---|
+| Authentication (login) | 20 | 51 | 49 | 45 – 88 |
+| Leave application | 20 | 8 | 8 | 6 – 13 |
+| Assistant — no tool call | 10 | 1,671 | 1,429 | 990 – 2,494 |
+| Assistant — one tool call | 10 | 2,916 | 2,656 | 2,328 – 4,337 |
+
+Two observations follow. First, the application's own work is negligible: a
+leave application — validation, an overlap query, an atomic conditional
+reservation and a write — completes in single-digit milliseconds, and
+authentication is dominated by the deliberate cost of Argon2id verification
+rather than by the framework. Second, assistant latency is almost entirely
+model time. The difference between the two assistant rows, approximately 1.2 s,
+is the cost of the second model round trip that a tool-calling answer requires:
+one call to select the tool, one to compose the answer from its result, with a
+database query between them costing under ten milliseconds.
+
+The practical consequence is that optimising this system for responsiveness
+means reducing model round trips, not application code.
+
+### I. Retrieval Quality
+
+Twenty questions whose answers are present in the corpus, each labelled with
+the document containing the answer, were issued alongside five whose answers
+are absent. Queries were issued as a full-time employee, so the intern policy
+was correctly out of scope and could not contribute to the score. Retrieval is
+deterministic for a fixed corpus, so unlike generation these figures are
+reproducible.
+
+**TABLE X — RETRIEVAL QUALITY (k = 4, floor = 0.65)**
+
+| Metric | Result |
+|---|---|
+| Recall@4 | 90.0% (18/20) |
+| Mean reciprocal rank | 0.850 |
+| Out-of-corpus rejection | 60.0% (3/5) |
+
+An MRR of 0.850 indicates that where the correct document was retrieved it was
+usually ranked first rather than merely present in the returned set.
+
+The four errors are more informative than the aggregate, and all four are
+attributable to the same cause — the similarity floor cutting through a
+continuous distribution rather than a separable one.
+
+Both retrieval misses returned *nothing at all* rather than a wrong passage:
+the correct passage existed but scored below 0.65. Both false admissions
+scored just above it, at 0.657 and 0.683. The floor is therefore not
+separating relevant from irrelevant; it is separating scores, and near the
+threshold the two populations overlap.
+
+One pair makes this concrete. "How do I change my bank details?" returned
+nothing, while "How do I reset my payroll direct deposit?" matched the handbook
+at 0.657 — the same passage answers both, and the two phrasings fall on
+opposite sides of the threshold. We further note that the second of these was
+labelled out-of-corpus when the question set was written, but the handbook does
+in fact cover changes to bank details; the retrieval was arguably correct and
+the label wrong. Reported as measured, without adjusting the label after seeing
+the result.
+
+This qualifies the calibration reported in Section V-D rather than
+contradicting it. Raising the floor from 0.5 to 0.65 converted a filter that
+rejected nothing into one that rejects most off-topic queries, which is a
+substantial improvement. It did not produce a clean separation, because at this
+corpus size no single scalar threshold does. A threshold chosen on a small
+corpus should be reported with its false-negative rate, not only its
+false-positive rate — the recall cost is invisible if only rejection is
+measured.
