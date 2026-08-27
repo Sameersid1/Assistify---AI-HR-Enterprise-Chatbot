@@ -491,3 +491,74 @@ corpus size no single scalar threshold does. A threshold chosen on a small
 corpus should be reported with its false-negative rate, not only its
 false-positive rate — the recall cost is invisible if only rejection is
 measured.
+
+---
+
+## 10. Section V-I addition — end-to-end refusal
+
+Add the following after Table X, before the closing paragraph of §V-I. It
+reports the outcome that matters to a user, and it is the reason the 60%
+retrieval figure is not the system's error rate.
+
+> **A note on what the rejection rate measures.** The 60% figure above is an
+> *intermediate* signal: it counts how often the similarity floor declines to
+> return a passage. It is not the system's error rate, because a passage
+> reaching the model is harmless if the model then declines to answer from it.
+>
+> The distinction is forced by what cosine similarity can express. A question
+> about parental leave, a pension scheme or a health insurance provider is
+> semantically close to an employee handbook whether or not the handbook covers
+> it. Similarity measures topical proximity, not whether a passage contains an
+> answer. We confirmed this is not an artifact of dimensional truncation by
+> re-embedding the corpus at 256, 512, 768 and 1,536 dimensions and measuring
+> the separation between the worst on-topic and best off-topic score at each.
+> The populations overlap at every dimensionality tested, and the highest
+> dimensionalities were marginally *worse* — no scalar threshold over these
+> embeddings separates the two classes.
+>
+> The behaviour a user experiences was therefore measured directly. Seven
+> questions whose answers are absent from the corpus were put to the assistant
+> end to end.
+>
+> **TABLE XI — END-TO-END REFUSAL ON OUT-OF-CORPUS QUESTIONS**
+>
+> | Metric | Result |
+> |---|---|
+> | Questions asked | 7 |
+> | Correctly declined | 7 |
+> | Answers fabricated | 0 |
+> | End-to-end refusal rate | 100.0% |
+>
+> In every case the assistant stated that the corpus did not cover the subject,
+> and in five cases offered to forward the question to HR. The most instructive
+> reply concerned a mileage claim: *"I couldn't find a specific policy covering
+> mileage for personal car use. General expenses do require your manager's
+> written approval and itemised receipts… Shall I forward your question to HR to
+> get the exact mileage rate?"* The assistant declined the specific question,
+> supplied the general procedure it did hold, and escalated for the remainder —
+> without inventing a rate.
+>
+> The architecture therefore places two independent barriers between an
+> unanswerable question and a fabricated answer: a similarity floor that removes
+> most irrelevant passages, and a system prompt that forbids answering beyond
+> the retrieved text. The first is imperfect and measurably so. The second
+> caught every case the first admitted. Reporting only the retrieval figure
+> would understate the system; reporting only the end-to-end figure would hide a
+> real weakness in the floor. Both are given.
+>
+> **Limitation.** Seven questions against a non-deterministic model is a small
+> sample, and a 100% result on it should be read as consistent with the design
+> rather than as a guarantee. The claim the evidence supports is that no tested
+> out-of-corpus question produced a fabricated answer.
+
+**Also update the closing paragraph of §V-I** so it reads as a qualification
+rather than a defeat:
+
+> This qualifies the calibration reported in Section V-D rather than
+> contradicting it. Raising the floor from 0.5 to 0.65 converted a filter that
+> rejected nothing into one that rejects most off-topic queries. It does not
+> separate the two populations cleanly, because at this corpus size no scalar
+> threshold does — a finding we verified across four dimensionalities. The
+> correct conclusion is not that the floor is inadequate but that a retrieval
+> floor is one barrier of two, and should be reported with its false-negative
+> rate rather than in isolation.

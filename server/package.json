@@ -24,7 +24,9 @@
     "test:password": "tsx scripts/verify-password.mjs",
     "test:concurrency": "tsx scripts/verify-concurrency.mjs",
     "eval:latency": "tsx scripts/verify-latency.mjs",
-    "eval:retrieval": "tsx scripts/verify-retrieval.mjs"
+    "eval:retrieval": "tsx scripts/verify-retrieval.mjs",
+    "eval:refusal": "tsx scripts/verify-refusal.mjs",
+    "eval:dimensions": "tsx scripts/calibrate-dimensions.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",
